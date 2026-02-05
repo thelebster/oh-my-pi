@@ -1,10 +1,14 @@
-.PHONY: help run check status ping verbose tags sh shell claude reboot poweroff ansible-shell sys-status sys-restart sys-enable sys-logs
+.PHONY: help run check status ping verbose tags sh shell claude reboot poweroff ansible-shell ddns sys-status sys-restart sys-enable sys-logs
 
 -include .env
 
-PI_HOST ?= pihub.local
-PI_USER ?= pi
-SSH_KEY ?=
+export PI_HOST ?= pihub.local
+export PI_USER ?= pi
+export SSH_KEY ?=
+
+export CF_API_TOKEN ?=
+export CF_ZONE_ID ?=
+export CF_DOMAIN ?=
 
 SSH_KEY_OPT := $(if $(SSH_KEY),-i $(SSH_KEY))
 SSH = ssh$(if $(SSH_KEY_OPT), $(SSH_KEY_OPT)) $(PI_USER)@$(PI_HOST)
@@ -51,6 +55,10 @@ ansible-shell:
 ## claude  : Run Claude on Pi. Usage: make claude "hello"
 claude:
 	@$(SSH) -t 'bash -lc "~/.local/bin/claude -p \"$(filter-out $@,$(MAKECMDGOALS))\""'
+
+## ddns    : Run Cloudflare DDNS update locally.
+ddns:
+	bash ansible/scripts/cloudflare-ddns.sh
 
 ## reboot  : Reboot Pi.
 reboot:

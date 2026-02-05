@@ -9,10 +9,13 @@ Simple Ansible setup for Raspberry Pi 5.
 - Nginx
 - Claude Code CLI
 - Stress testing tools (stress-ng, sysbench, iperf3)
+- Raspberry Pi Connect
+- Cloudflare DDNS
+- SSH hardening (fail2ban, password auth disabled)
 
-## Usage
+## Setup
 
-1. Edit `ansible/inventory.ini` with your Pi's IP
+1. Copy `.env.example` to `.env` and fill in your values
 2. Run:
 
 ```bash
@@ -27,7 +30,18 @@ make run        Run the playbook.
 make check      Dry run (check mode).
 make status     Show versions and service status.
 make ping       Test connection to Pi.
+make shell      SSH into Pi.
+make ddns       Run Cloudflare DDNS update locally.
 make verbose    Run playbook with verbose output.
 make tags       List all available tags.
-make shell      Run shell command on Pi. Usage: make shell "ls -la"
 ```
+
+## Running without Make
+
+Source `.env` first to load env vars:
+
+```bash
+source .env && ansible-playbook ansible/playbook.yml --tags "ddns,ssh"
+```
+
+Available tags: `updates`, `eeprom`, `locale`, `docker`, `nginx`, `claude`, `stress`, `connect`, `fan`, `ddns`, `ssh`, `status`

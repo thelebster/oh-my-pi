@@ -13,7 +13,7 @@
 
     - name: Install essentials
       apt:
-        name: [curl, git, vim, htop, ufw, pv, jq]
+        name: [curl, git, vim, htop, ufw, pv, jq, mc]
         state: present
       tags: updates
 
@@ -157,6 +157,86 @@
       notify: Reboot required
       tags: fan
 
+    # === CLOUDFLARE DDNS ===
+    - name: Deploy Cloudflare DDNS env file
+      copy:
+        content: |
+          CF_API_TOKEN={{ lookup("env", "CF_API_TOKEN") }}
+          CF_ZONE_ID={{ lookup("env", "CF_ZONE_ID") }}
+          CF_DOMAIN={{ lookup("env", "CF_DOMAIN") }}
+        dest: /etc/cloudflare-ddns.env
+        mode: "0600"
+      tags: ddns
+
+    - name: Deploy Cloudflare DDNS update script
+      copy:
+        src: scripts/cloudflare-ddns.sh
+        dest: /usr/local/bin/cloudflare-ddns.sh
+        mode: "0700"
+      tags: ddns
+
+    - name: Install dnsutils for dig command
+      apt:
+        name: dnsutils
+        state: present
+      tags: ddns
+
+    - name: Add DDNS cron job (every 5 minutes)
+      cron:
+        name: "Cloudflare DDNS update"
+        minute: "*/5"
+        job: "/usr/local/bin/cloudflare-ddns.sh"
+      tags: ddns
+
+    # === SSH HARDENING ===
+    - name: Disable SSH password authentication
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PasswordAuthentication'
+        line: 'PasswordAuthentication no'
+      notify: Restart SSH
+      tags: ssh
+
+    - name: Disable SSH root login
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PermitRootLogin'
+        line: 'PermitRootLogin no'
+      notify: Restart SSH
+      tags: ssh
+
+    - name: Install fail2ban
+      apt:
+        name: fail2ban
+        state: present
+      tags: ssh
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: true
+      tags: ssh
+
+    - name: Configure fail2ban SSH jail
+      copy:
+        content: |
+          [sshd]
+          enabled = true
+          port = ssh
+          maxretry = 5
+          bantime = 3600
+          findtime = 600
+        dest: /etc/fail2ban/jail.d/ssh.conf
+        mode: "0644"
+      notify: Restart fail2ban
+      tags: ssh
+
+    - name: Enable fail2ban
+      systemd:
+        name: fail2ban
+        enabled: true
+        state: started
+      tags: ssh
+
     # === GATHER INFO ===
     - name: Get Docker version
       command: docker --version
@@ -229,6 +309,27 @@
       failed_when: false
       tags: status
 
+    - name: Get fail2ban status
+      command: systemctl is-active fail2ban
+      register: fail2ban_status
+      changed_when: false
+      failed_when: false
+      tags: status
+
+    - name: Get fail2ban SSH jail stats
+      shell: fail2ban-client status sshd 2>/dev/null | grep -E 'Currently banned|Total banned' || echo 'not available'
+      register: fail2ban_stats
+      changed_when: false
+      failed_when: false
+      tags: status
+
+    - name: Check DDNS cron job
+      shell: crontab -l 2>/dev/null | grep -c cloudflare-ddns || echo 0
+      register: ddns_cron
+      changed_when: false
+      failed_when: false
+      tags: status
+
     - name: Show summary
       debug:
         msg: |
@@ -243,7 +344,17 @@
           SERVICES:
             docker:      {{ services.results[0].stdout }}
             nginx:       {{ services.results[1].stdout }}
+            fail2ban:    {{ fail2ban_status.stdout | default('not installed') }}
             rpi-connect: {{ rpi_connect.stdout | default('not running - run rpi-connect signin') }}
+
+          NETWORK:
+            IP: {{ ansible_facts['default_ipv4']['address'] }} ({{ ansible_facts['default_ipv4']['interface'] }})
+            All IPs: {{ ansible_facts['all_ipv4_addresses'] | join(', ') }}
+            DDNS: cron {{ 'active' if ddns_cron.stdout | int > 0 else 'not configured' }}
+
+          SECURITY:
+            fail2ban: {{ fail2ban_stats.stdout_lines | default(['not available']) | join(', ') }}
+            SSH password auth: disabled
 
           SYSTEM:
             Uptime: {{ uptime_info.stdout }}
@@ -267,3 +378,13 @@
     - name: Reboot required
       debug:
         msg: "Reboot required to apply changes (EEPROM firmware or fan config)"
+
+    - name: Restart SSH
+      systemd:
+        name: ssh
+        state: restarted
+
+    - name: Restart fail2ban
+      systemd:
+        name: fail2ban
+        state: restarted

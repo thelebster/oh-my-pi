@@ -46,6 +46,7 @@ journalctl -u <service> -f     # Follow service logs
 ```bash
 ip addr                        # IP addresses
 hostname -I                    # Just the IPs
+curl -s ifconfig.me            # External/public IP
 ss -tulpn                      # Listening ports
 ping -c 3 google.com           # Test connectivity
 ```
