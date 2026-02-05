@@ -210,6 +210,18 @@
       changed_when: false
       tags: status
 
+    - name: Check Claude Code auth status
+      shell: /home/{{ ansible_user }}/.local/bin/claude -p "hello" 2>&1
+      register: claude_auth
+      become: false
+      changed_when: false
+      failed_when: false
+      timeout: 30
+      environment:
+        HOME: /home/{{ ansible_user }}
+        USE_BUILTIN_RIPGREP: "0"
+      tags: status
+
     - name: Get EEPROM version
       command: rpi-eeprom-update
       register: eeprom_ver
@@ -224,7 +236,7 @@
 
           VERSIONS:
             Docker:    {{ docker_ver.stdout }}
-            Claude:    {{ claude_ver.stdout | default('not found') }}
+            Claude:    {{ claude_ver.stdout | default('not found') }} ({{ 'authenticated' if claude_auth.rc == 0 else 'NOT authenticated - run: claude /login' }})
             Nginx:     {{ nginx_ver.stderr | regex_search('nginx/[0-9.]+') }}
             stress-ng: {{ stress_ver.stdout_lines[0] }}
 
