@@ -29,6 +29,20 @@
         state: enabled
       tags: updates
 
+    # === EEPROM FIRMWARE ===
+    - name: Check EEPROM update status
+      command: rpi-eeprom-update
+      register: eeprom_check
+      changed_when: false
+      failed_when: false
+      tags: eeprom
+
+    - name: Apply EEPROM update if available
+      command: rpi-eeprom-update -a
+      when: "'UPDATE AVAILABLE' in eeprom_check.stdout"
+      notify: Reboot required
+      tags: eeprom
+
     # === FIX LOCALE (macOS SSH compatibility) ===
     - name: Enable en_US.UTF-8 locale
       lineinfile:
@@ -196,6 +210,13 @@
       changed_when: false
       tags: status
 
+    - name: Get EEPROM version
+      command: rpi-eeprom-update
+      register: eeprom_ver
+      changed_when: false
+      failed_when: false
+      tags: status
+
     - name: Show summary
       debug:
         msg: |
@@ -215,6 +236,7 @@
           SYSTEM:
             Uptime: {{ uptime_info.stdout }}
             CPU temp: {{ cpu_temp.stdout | regex_replace('temp=', '') }}
+            EEPROM:  {{ eeprom_ver.stdout | regex_search('CURRENT:.*') }}
 
           STRESS TESTING:
             CPU stress (test fan):    stress-ng --cpu 4 --timeout 60s
@@ -232,4 +254,4 @@
   handlers:
     - name: Reboot required
       debug:
-        msg: "Fan config changed - reboot required for new thresholds to take effect"
+        msg: "Reboot required to apply changes (EEPROM firmware or fan config)"
