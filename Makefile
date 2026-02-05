@@ -1,4 +1,13 @@
-.PHONY: help run check status ping verbose tags shell
+.PHONY: help run check status ping verbose tags sh shell reboot poweroff ansible-shell sys-status sys-restart sys-enable sys-logs
+
+-include .env
+
+PI_HOST ?= pihub.local
+PI_USER ?= pi
+SSH_KEY ?=
+
+SSH_KEY_OPT := $(if $(SSH_KEY),-i $(SSH_KEY))
+SSH = ssh$(if $(SSH_KEY_OPT), $(SSH_KEY_OPT)) $(PI_USER)@$(PI_HOST)
 
 ## help    : Print commands help.
 help: Makefile
@@ -28,9 +37,42 @@ verbose:
 tags:
 	ansible-playbook ansible/playbook.yml --list-tags
 
-## shell   : Run shell command on Pi. Usage: make shell "ls -la"
-shell:
+## sh      : SSH into Pi.
+sh:
+	$(SSH)
+
+## shell   : SSH into Pi (alias for sh).
+shell: sh
+
+## ansible-shell : Run command via ansible. Usage: make ansible-shell "ls -la"
+ansible-shell:
 	@ansible pihub -m shell -a "$(filter-out $@,$(MAKECMDGOALS))"
+
+## reboot  : Reboot Pi.
+reboot:
+	$(SSH) sudo reboot
+
+## poweroff : Shutdown Pi.
+poweroff:
+	$(SSH) sudo poweroff
+
+# === SERVICE SHORTCUTS ===
+
+## sys-status  : Service status. Usage: make sys-status nginx
+sys-status:
+	@ansible pihub -m shell -a "systemctl status $(filter-out $@,$(MAKECMDGOALS))"
+
+## sys-restart : Restart service. Usage: make sys-restart nginx
+sys-restart:
+	@ansible pihub -m shell -a "systemctl restart $(filter-out $@,$(MAKECMDGOALS))"
+
+## sys-enable  : Enable service on boot. Usage: make sys-enable nginx
+sys-enable:
+	@ansible pihub -m shell -a "systemctl enable $(filter-out $@,$(MAKECMDGOALS))"
+
+## sys-logs    : Follow service logs. Usage: make sys-logs nginx
+sys-logs:
+	@$(SSH) journalctl -u $(filter-out $@,$(MAKECMDGOALS)) -f
 
 %:
 	@:

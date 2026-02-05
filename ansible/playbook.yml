@@ -184,6 +184,18 @@
       failed_when: false
       tags: status
 
+    - name: Get CPU temperature
+      command: vcgencmd measure_temp
+      register: cpu_temp
+      changed_when: false
+      tags: status
+
+    - name: Get uptime
+      command: uptime -p
+      register: uptime_info
+      changed_when: false
+      tags: status
+
     - name: Show summary
       debug:
         msg: |
@@ -199,6 +211,10 @@
             docker:      {{ services.results[0].stdout }}
             nginx:       {{ services.results[1].stdout }}
             rpi-connect: {{ rpi_connect.stdout | default('not running - run rpi-connect signin') }}
+
+          SYSTEM:
+            Uptime: {{ uptime_info.stdout }}
+            CPU temp: {{ cpu_temp.stdout | regex_replace('temp=', '') }}
 
           STRESS TESTING:
             CPU stress (test fan):    stress-ng --cpu 4 --timeout 60s
