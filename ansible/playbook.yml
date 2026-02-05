@@ -1,0 +1,219 @@
+---
+- name: Setup Raspberry Pi 5
+  hosts: pihub
+  become: true
+
+  tasks:
+    # === UPDATES ===
+    - name: Update and upgrade packages
+      apt:
+        update_cache: true
+        upgrade: dist
+      tags: updates
+
+    - name: Install essentials
+      apt:
+        name: [curl, git, vim, htop, ufw, pv, jq]
+        state: present
+      tags: updates
+
+    - name: Enable firewall with SSH
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+      loop: ["22", "80", "443"]
+      tags: updates
+
+    - name: Enable UFW
+      ufw:
+        state: enabled
+      tags: updates
+
+    # === FIX LOCALE (macOS SSH compatibility) ===
+    - name: Enable en_US.UTF-8 locale
+      lineinfile:
+        path: /etc/locale.gen
+        regexp: '^#? *en_US.UTF-8 UTF-8'
+        line: 'en_US.UTF-8 UTF-8'
+      tags: locale
+
+    - name: Generate locales
+      command: locale-gen en_US.UTF-8
+      args:
+        creates: /usr/lib/locale/en_US.utf8
+      tags: locale
+
+    - name: Set default locale
+      copy:
+        content: |
+          LANG=en_US.UTF-8
+          LC_CTYPE=en_US.UTF-8
+        dest: /etc/default/locale
+        mode: "0644"
+      tags: locale
+
+    # === DOCKER ===
+    - name: Install Docker
+      shell: curl -fsSL https://get.docker.com | sh
+      args:
+        creates: /usr/bin/docker
+      tags: docker
+
+    - name: Add user to docker group
+      user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: true
+      tags: docker
+
+    - name: Start Docker
+      systemd:
+        name: docker
+        enabled: true
+        state: started
+      tags: docker
+
+    # === NGINX ===
+    - name: Install Nginx
+      apt:
+        name: nginx
+        state: present
+      tags: nginx
+
+    - name: Start Nginx
+      systemd:
+        name: nginx
+        enabled: true
+        state: started
+      tags: nginx
+
+    # === CLAUDE CODE ===
+    - name: Install ripgrep (fix for Pi 5 16KB pages)
+      apt:
+        name: ripgrep
+        state: present
+      tags: claude
+
+    - name: Set USE_BUILTIN_RIPGREP for all users
+      lineinfile:
+        path: /etc/environment
+        line: 'USE_BUILTIN_RIPGREP=0'
+        create: true
+      tags: claude
+
+    - name: Install Claude Code via native installer
+      shell: curl -fsSL https://claude.ai/install.sh | bash
+      args:
+        creates: /home/{{ ansible_user }}/.local/bin/claude
+      become: false
+      tags: claude
+
+    # === STRESS TESTING ===
+    - name: Install stress tools
+      apt:
+        name: [stress-ng, sysbench, iperf3]
+        state: present
+      tags: stress
+
+    # === RASPBERRY PI CONNECT ===
+    - name: Install rpi-connect
+      apt:
+        name: rpi-connect
+        state: present
+      tags: connect
+
+    # === FAN CONFIGURATION ===
+    - name: Configure fan temperature thresholds
+      blockinfile:
+        path: /boot/firmware/config.txt
+        marker: "# {mark} ANSIBLE MANAGED - FAN CONFIG"
+        block: |
+          dtparam=fan_temp0=40000
+          dtparam=fan_temp0_hyst=5000
+          dtparam=fan_temp0_speed=75
+          dtparam=fan_temp1=55000
+          dtparam=fan_temp1_hyst=5000
+          dtparam=fan_temp1_speed=125
+          dtparam=fan_temp2=65000
+          dtparam=fan_temp2_hyst=5000
+          dtparam=fan_temp2_speed=175
+          dtparam=fan_temp3=75000
+          dtparam=fan_temp3_hyst=5000
+          dtparam=fan_temp3_speed=250
+      notify: Reboot required
+      tags: fan
+
+    # === GATHER INFO ===
+    - name: Get Docker version
+      command: docker --version
+      register: docker_ver
+      changed_when: false
+      tags: status
+
+    - name: Get Claude CLI version
+      command: /home/{{ ansible_user }}/.local/bin/claude --version
+      register: claude_ver
+      changed_when: false
+      failed_when: false
+      tags: status
+
+    - name: Get Nginx version
+      command: nginx -v
+      register: nginx_ver
+      changed_when: false
+      tags: status
+
+    - name: Get stress-ng version
+      command: stress-ng --version
+      register: stress_ver
+      changed_when: false
+      tags: status
+
+    - name: Get service statuses
+      command: systemctl is-active {{ item }}
+      loop: [docker, nginx]
+      register: services
+      changed_when: false
+      failed_when: false
+      tags: status
+
+    - name: Get rpi-connect status (user service)
+      command: systemctl --machine={{ ansible_user }}@.host --user is-active rpi-connect
+      register: rpi_connect
+      changed_when: false
+      failed_when: false
+      tags: status
+
+    - name: Show summary
+      debug:
+        msg: |
+          ========== SETUP COMPLETE ==========
+
+          VERSIONS:
+            Docker:    {{ docker_ver.stdout }}
+            Claude:    {{ claude_ver.stdout | default('not found') }}
+            Nginx:     {{ nginx_ver.stderr | regex_search('nginx/[0-9.]+') }}
+            stress-ng: {{ stress_ver.stdout_lines[0] }}
+
+          SERVICES:
+            docker:      {{ services.results[0].stdout }}
+            nginx:       {{ services.results[1].stdout }}
+            rpi-connect: {{ rpi_connect.stdout | default('not running - run rpi-connect signin') }}
+
+          STRESS TESTING:
+            CPU stress (test fan):    stress-ng --cpu 4 --timeout 60s
+            CPU benchmark:            sysbench cpu run
+            Memory benchmark:         sysbench memory run
+            Disk I/O benchmark:       sysbench fileio --file-test-mode=rndrw prepare && sysbench fileio --file-test-mode=rndrw run
+            Network server:           iperf3 -s
+            Network client:           iperf3 -c <server-ip>
+
+          NEXT STEPS:
+            - Run 'rpi-connect signin' to enable remote access
+            - Visit connect.raspberrypi.com
+      tags: status
+
+  handlers:
+    - name: Reboot required
+      debug:
+        msg: "Fan config changed - reboot required for new thresholds to take effect"

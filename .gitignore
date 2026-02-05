@@ -1,0 +1,17 @@
+# Ansible
+*.retry
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Secrets
+*.vault
+*vault*.yml
+secrets.yml
+.env
+*.pem
+*.key
