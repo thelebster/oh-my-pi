@@ -1,4 +1,4 @@
-.PHONY: help run check status ping verbose tags sh shell reboot poweroff ansible-shell sys-status sys-restart sys-enable sys-logs
+.PHONY: help run check status ping verbose tags sh shell claude reboot poweroff ansible-shell sys-status sys-restart sys-enable sys-logs
 
 -include .env
 
@@ -47,6 +47,10 @@ shell: sh
 ## ansible-shell : Run command via ansible. Usage: make ansible-shell "ls -la"
 ansible-shell:
 	@ansible pihub -m shell -a "$(filter-out $@,$(MAKECMDGOALS))"
+
+## claude  : Run Claude on Pi. Usage: make claude "hello"
+claude:
+	@$(SSH) -t 'bash -lc "~/.local/bin/claude -p \"$(filter-out $@,$(MAKECMDGOALS))\""'
 
 ## reboot  : Reboot Pi.
 reboot:
