@@ -157,7 +157,7 @@
       notify: Reboot required
       tags: fan
 
-    # === CLOUDFLARE DDNS ===
+    # === CLOUDFLARE DDNS (requires CF_API_TOKEN) ===
     - name: Deploy Cloudflare DDNS env file
       copy:
         content: |
@@ -166,6 +166,7 @@
           CF_DOMAIN={{ lookup("env", "CF_DOMAIN") }}
         dest: /etc/cloudflare-ddns.env
         mode: "0600"
+      when: lookup("env", "CF_API_TOKEN") != ""
       tags: ddns
 
     - name: Deploy Cloudflare DDNS update script
@@ -173,12 +174,14 @@
         src: scripts/cloudflare-ddns.sh
         dest: /usr/local/bin/cloudflare-ddns.sh
         mode: "0700"
+      when: lookup("env", "CF_API_TOKEN") != ""
       tags: ddns
 
     - name: Install dnsutils for dig command
       apt:
         name: dnsutils
         state: present
+      when: lookup("env", "CF_API_TOKEN") != ""
       tags: ddns
 
     - name: Add DDNS cron job (every 5 minutes)
@@ -186,7 +189,86 @@
         name: "Cloudflare DDNS update"
         minute: "*/5"
         job: "/usr/local/bin/cloudflare-ddns.sh"
+      when: lookup("env", "CF_API_TOKEN") != ""
       tags: ddns
+
+    - name: Remove DDNS cron job
+      cron:
+        name: "Cloudflare DDNS update"
+        state: absent
+      when: lookup("env", "CF_API_TOKEN") == ""
+      tags: ddns
+
+    - name: Remove DDNS script and env file
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /usr/local/bin/cloudflare-ddns.sh
+        - /etc/cloudflare-ddns.env
+      when: lookup("env", "CF_API_TOKEN") == ""
+      tags: ddns
+
+    # === CLOUDFLARE TUNNEL (requires CF_TUNNEL_TOKEN) ===
+    - name: Add cloudflared apt key
+      get_url:
+        url: https://pkg.cloudflare.com/cloudflare-main.gpg
+        dest: /usr/share/keyrings/cloudflare-main.gpg
+        mode: "0644"
+      when: lookup("env", "CF_TUNNEL_TOKEN") != ""
+      tags: tunnel
+
+    - name: Add cloudflared apt repo
+      copy:
+        content: "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared bookworm main\n"
+        dest: /etc/apt/sources.list.d/cloudflared.list
+        mode: "0644"
+      register: cloudflared_repo
+      when: lookup("env", "CF_TUNNEL_TOKEN") != ""
+      tags: tunnel
+
+    - name: Update apt cache for cloudflared
+      apt:
+        update_cache: true
+      when: cloudflared_repo.changed | default(false)
+      tags: tunnel
+
+    - name: Install cloudflared
+      apt:
+        name: cloudflared
+        state: present
+      when: lookup("env", "CF_TUNNEL_TOKEN") != ""
+      tags: tunnel
+
+    - name: Install cloudflared tunnel service
+      shell: cloudflared service install {{ lookup("env", "CF_TUNNEL_TOKEN") }}
+      args:
+        creates: /etc/systemd/system/cloudflared.service
+      when: lookup("env", "CF_TUNNEL_TOKEN") != ""
+      tags: tunnel
+
+    - name: Enable and start cloudflared
+      systemd:
+        name: cloudflared
+        enabled: true
+        state: started
+      when: lookup("env", "CF_TUNNEL_TOKEN") != ""
+      tags: tunnel
+
+    - name: Stop and disable cloudflared
+      systemd:
+        name: cloudflared
+        enabled: false
+        state: stopped
+      when: lookup("env", "CF_TUNNEL_TOKEN") == ""
+      failed_when: false
+      tags: tunnel
+
+    - name: Uninstall cloudflared service
+      shell: cloudflared service uninstall
+      when: lookup("env", "CF_TUNNEL_TOKEN") == ""
+      failed_when: false
+      tags: tunnel
 
     # === SSH HARDENING ===
     - name: Disable SSH password authentication
@@ -323,6 +405,13 @@
       failed_when: false
       tags: status
 
+    - name: Get cloudflared status
+      command: systemctl is-active cloudflared
+      register: cloudflared_status
+      changed_when: false
+      failed_when: false
+      tags: status
+
     - name: Check DDNS cron job
       shell: crontab -l 2>/dev/null | grep -c cloudflare-ddns || echo 0
       register: ddns_cron
@@ -344,6 +433,7 @@
           SERVICES:
             docker:      {{ services.results[0].stdout }}
             nginx:       {{ services.results[1].stdout }}
+            cloudflared: {{ cloudflared_status.stdout | default('not installed') }}
             fail2ban:    {{ fail2ban_status.stdout | default('not installed') }}
             rpi-connect: {{ rpi_connect.stdout | default('not running - run rpi-connect signin') }}
 

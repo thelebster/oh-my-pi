@@ -9,6 +9,7 @@ export SSH_KEY ?=
 export CF_API_TOKEN ?=
 export CF_ZONE_ID ?=
 export CF_DOMAIN ?=
+export CF_TUNNEL_TOKEN ?=
 
 SSH_KEY_OPT := $(if $(SSH_KEY),-i $(SSH_KEY))
 SSH = ssh$(if $(SSH_KEY_OPT), $(SSH_KEY_OPT)) $(PI_USER)@$(PI_HOST)
