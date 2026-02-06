@@ -34,6 +34,8 @@
         image: telegram-bot
         state: started
         restart_policy: unless-stopped
+        pid_mode: host
+        privileged: true
         env:
           TELEGRAM_BOT_TOKEN: "{{ lookup('env', 'TELEGRAM_BOT_TOKEN') }}"
           TELEGRAM_ALLOWED_USERS: "{{ lookup('env', 'TELEGRAM_ALLOWED_USERS') }}"

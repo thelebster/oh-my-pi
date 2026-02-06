@@ -1,5 +1,7 @@
 import os
 import shutil
+import shlex
+import asyncio
 import logging
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, filters
@@ -99,12 +101,67 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines))
 
 
+CLAUDE_TIMEOUT = int(os.environ.get("CLAUDE_TIMEOUT", "120"))
+
+
+@authorized
+async def claude_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    prompt = " ".join(context.args) if context.args else ""
+    if not prompt:
+        await update.message.reply_text("Usage: /claude <prompt>")
+        return
+
+    msg = await update.message.reply_text("Thinking...")
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "nsenter", "-t", "1", "-m", "-u", "-i", "-n", "--",
+            "su", "-", "pi", "-c", f"claude -p {shlex.quote(prompt)}",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(), timeout=CLAUDE_TIMEOUT
+        )
+    except asyncio.TimeoutError:
+        proc.kill()
+        await msg.edit_text(f"Timed out ({CLAUDE_TIMEOUT}s limit).")
+        return
+    except Exception as e:
+        await msg.edit_text(f"Error: {e}")
+        return
+
+    if proc.returncode != 0:
+        error = stderr.decode().strip() or "Unknown error"
+        if len(error) > 4000:
+            error = error[:4000] + "\n...(truncated)"
+        await msg.edit_text(f"Error (exit {proc.returncode}):\n{error}")
+        return
+
+    result = stdout.decode().strip()
+    if not result:
+        result = "(empty response)"
+    if len(result) > 4096:
+        result = result[:4093] + "..."
+
+    await msg.edit_text(result)
+
+
+async def post_init(app):
+    await app.bot.set_my_commands([
+        ("status", "Pi system info"),
+        ("claude", "Ask Claude"),
+        ("hello", "Say hello"),
+    ])
+
+
 def main():
     token = os.environ["TELEGRAM_BOT_TOKEN"]
-    app = Application.builder().token(token).build()
+    app = Application.builder().token(token).post_init(post_init).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("hello", hello))
     app.add_handler(CommandHandler("status", status))
+    app.add_handler(CommandHandler("claude", claude_cmd))
     logger.info("Bot starting...")
     app.run_polling()
 
