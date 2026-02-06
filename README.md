@@ -54,13 +54,13 @@ SSH and HTTP cannot share the same hostname — use separate subdomains (e.g. `s
    CF_TUNNEL_SSH_HOST=ssh-mypi
    CF_TUNNEL_HTTP_HOST=mypi
    ```
-5. Run `make run` or `ansible-playbook ansible/playbook.yml --tags tunnel`
+5. Run `make run` or `./play --tags tunnel`
 
 The playbook installs `cloudflared`, starts the service, and configures ingress rules + DNS records automatically via the Cloudflare API.
 
 To completely remove the tunnel (ingress, DNS, and service):
 ```bash
-ansible-playbook ansible/playbook.yml --tags tunnel-remove
+./play --tags tunnel-remove
 ```
 
 **Local SSH config** — install `cloudflared` locally and add to `~/.ssh/config`:
@@ -82,19 +82,22 @@ Updates a Cloudflare DNS A record with the Pi's public IP every 5 minutes. Usefu
    CF_ZONE_ID=your-zone-id
    CF_DOMAIN=mypi.example.com
    ```
-3. Run `make run` or `ansible-playbook ansible/playbook.yml --tags ddns`
+3. Run `make run` or `./play --tags ddns`
 
 To remove DDNS (cron, script, and env file):
 ```bash
-ansible-playbook ansible/playbook.yml --tags ddns-remove
+./play --tags ddns-remove
 ```
 
 ## Running without Make
 
-Source `.env` first to load env vars:
+Use the wrapper scripts — they source `.env` automatically:
 
 ```bash
-source .env && ansible-playbook ansible/playbook.yml --tags "tunnel,ssh"
+./play                          # Run full playbook
+./play --tags "tunnel,ssh"      # Run specific tags
+./cmd -m ping                # Ad-hoc: test connection
+./cmd -m shell -a 'uptime'   # Ad-hoc: run command
 ```
 
 Available tags: `updates`, `eeprom`, `locale`, `docker`, `nginx`, `claude`, `stress`, `connect`, `fan`, `ddns`, `tunnel`, `ssh`, `status`

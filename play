@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Wrapper for ansible-playbook commands.
+# Sources .env so secrets and config are available.
+#
+# Usage:
+#   ./play
+#   ./play --check
+#   ./play --tags "docker"
+#   ./play -v --limit mypi
+
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+if [ -f .env ]; then
+  set -a
+  source .env
+  set +a
+fi
+
+ansible-playbook ansible/playbook.yml "$@"
