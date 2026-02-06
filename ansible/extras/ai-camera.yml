@@ -1,0 +1,105 @@
+---
+- name: Setup AI HAT+ and camera
+  hosts: mypi
+  become: true
+
+  tasks:
+    # === AI HAT+ (HAILO-8) ===
+
+    - name: Install DKMS
+      apt:
+        name: dkms             # prerequisite for Hailo kernel driver build
+        state: present
+      tags: ai
+
+    - name: Install Hailo AI HAT+ packages
+      apt:
+        name: hailo-all        # hailo-dkms, hailort, tappas-core, python3-hailort, rpicam-apps-hailo-postprocess
+        state: present
+      notify: Reboot required
+      tags: ai
+
+    - name: Install rpicam-apps
+      apt:
+        name: rpicam-apps      # rpicam-hello, rpicam-vid, rpicam-still
+        state: present
+      tags: ai
+
+    # === DEMO SCRIPTS ===
+
+    - name: Create scripts directory
+      file:
+        path: /home/{{ ansible_user }}/scripts
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0755"
+      tags: ai
+
+    - name: Copy AI demo scripts
+      copy:
+        src: "../scripts/{{ item }}"
+        dest: "/home/{{ ansible_user }}/scripts/{{ item }}"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0755"
+      loop:
+        - ai-demo-detect.sh    # object detection (YOLOv8)
+        - ai-demo-pose.sh      # pose estimation (YOLOv8)
+        - ai-demo-faces.sh     # person & face detection (YOLOv5)
+        - ai-demo-segment.sh   # image segmentation (YOLOv5)
+      tags: ai
+
+    # === VERIFY ===
+
+    - name: Get Hailo device info
+      command: hailortcli fw-control identify
+      register: hailo_info
+      changed_when: false
+      failed_when: false
+      tags: status
+
+    - name: Get camera info
+      command: rpicam-hello --list-cameras
+      register: camera_info
+      changed_when: false
+      failed_when: false
+      tags: status
+
+    - name: Get PCIe link speed
+      shell: lspci -vv 2>/dev/null | grep "LnkSta:" | head -1
+      register: pcie_speed
+      changed_when: false
+      failed_when: false
+      tags: status
+
+    - name: Show summary
+      debug:
+        msg: |
+          ========== AI HAT+ & CAMERA ==========
+
+          HAILO:
+          {{ hailo_info.stdout | default('not detected') | indent(2, first=true) }}
+
+          CAMERA:
+          {{ camera_info.stdout | default('not detected') | indent(2, first=true) }}
+
+          PCIE:
+            {{ pcie_speed.stdout | default('not available') | trim }}
+
+          DEMO SCRIPTS (~/scripts/):
+            ./ai-demo-detect.sh     # object detection (YOLOv8)
+            ./ai-demo-pose.sh       # pose estimation (YOLOv8)
+            ./ai-demo-faces.sh      # person & face detection (YOLOv5)
+            ./ai-demo-segment.sh    # image segmentation (YOLOv5)
+
+          CAMERA:
+            rpicam-hello -t 5000              # preview (5s)
+            rpicam-still -o photo.jpg         # photo
+            rpicam-vid -t 10000 -o video.h264 # video (10s)
+      tags: status
+
+  handlers:
+    - name: Reboot required
+      debug:
+        msg: "Reboot required for Hailo DKMS kernel module to load"

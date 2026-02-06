@@ -100,6 +100,7 @@ Optional tool bundles that run separately from the main playbook:
 ```
 
 Available extras:
+- **ai-camera** — AI HAT+ (Hailo-8) drivers + Camera Module 3 + rpicam-apps
 - **network** — nmap, whois, dnsutils, netcat, ...
 
 ## Running without Make

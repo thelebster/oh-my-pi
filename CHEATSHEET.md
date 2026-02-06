@@ -51,6 +51,74 @@ ss -tulpn                      # Listening ports
 ping -c 3 google.com           # Test connectivity
 ```
 
+## Docker
+
+```bash
+docker ps                          # running containers
+docker logs -f <container>         # follow logs
+docker stats                       # resource usage
+docker system prune -a             # clean up everything
+```
+
+## Nginx
+
+```bash
+nginx -t                           # test config
+systemctl reload nginx             # reload config
+journalctl -u nginx -f             # follow logs
+```
+
+## Claude Code
+
+```bash
+claude                             # interactive mode
+claude -p "prompt"                 # one-shot
+claude /login                      # authenticate
+```
+
+Requires `USE_BUILTIN_RIPGREP=0` on Pi 5 (16KB page size).
+
+## Stress Testing
+
+```bash
+stress-ng --cpu 4 --timeout 60s   # CPU stress (test fan)
+sysbench cpu run                   # CPU benchmark
+sysbench memory run                # memory benchmark
+iperf3 -s                          # network server
+iperf3 -c <server-ip>              # network client
+```
+
+## AI HAT+ & Camera
+
+| Component | Model | Details |
+|-----------|-------|---------|
+| AI accelerator | [Raspberry Pi AI HAT+](https://www.raspberrypi.com/products/ai-hat-plus/) | Hailo-8, 26 TOPS |
+| Camera | [Camera Module 3](https://www.raspberrypi.com/products/camera-module-3/) | IMX708, 12MP |
+
+```bash
+hailortcli fw-control identify     # Hailo device info
+rpicam-hello --list-cameras        # camera detection
+rpicam-hello -t 5000               # camera preview (5s)
+rpicam-still -o photo.jpg          # photo
+rpicam-vid -t 10000 -o video.h264  # video (10s)
+dmesg | grep -i hailo              # kernel logs
+lspci | grep -i hailo              # PCIe detection
+```
+
+AI demo scripts (installed to `~/scripts/`, Ctrl+C to stop):
+
+```bash
+~/scripts/ai-demo-detect.sh        # object detection (YOLOv8)
+~/scripts/ai-demo-pose.sh          # pose estimation (YOLOv8)
+~/scripts/ai-demo-faces.sh         # person & face detection (YOLOv5)
+~/scripts/ai-demo-segment.sh       # image segmentation (YOLOv5)
+```
+
+- [AI HAT+ docs](https://www.raspberrypi.com/documentation/accessories/ai-hat-plus.html)
+- [AI software guide](https://www.raspberrypi.com/documentation/computers/ai.html)
+- [Hailo RPi5 examples](https://github.com/hailo-ai/hailo-rpi5-examples)
+- [Hailo Model Explorer](https://hailo.ai/products/hailo-software/model-explorer/)
+
 ## Cloudflare Tunnel
 
 On the Pi (managed by playbook):
@@ -78,6 +146,22 @@ References:
 - [Many services, one cloudflared](https://blog.cloudflare.com/many-services-one-cloudflared/)
 - [Expose multiple services on single host](https://community.cloudflare.com/t/expose-multiple-services-on-single-host-in-cloudflare-tunnels/486973)
 - [Multiple services on multiple subdomains through 1 tunnel](https://community.cloudflare.com/t/multiple-services-on-multiple-subdomains-through-1-tunnel/772328)
+
+## Cloudflare DDNS
+
+```bash
+crontab -l | grep cloudflare       # check cron
+cat /etc/cloudflare-ddns.env       # check config
+/usr/local/bin/cloudflare-ddns.sh  # manual update
+```
+
+## SSH & Security
+
+```bash
+fail2ban-client status sshd        # banned IPs and stats
+fail2ban-client set sshd unbanip <ip>  # unban an IP
+journalctl -u fail2ban -f          # follow logs
+```
 
 ## Troubleshooting
 
