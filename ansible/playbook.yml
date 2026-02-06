@@ -29,6 +29,20 @@
         state: enabled
       tags: updates
 
+    # === HOSTNAME ===
+    - name: Preserve hostname across cloud-init reboots
+      lineinfile:
+        path: /etc/cloud/cloud.cfg
+        regexp: '^preserve_hostname'
+        line: 'preserve_hostname: true'
+      tags: hostname
+
+    - name: Set hostname
+      hostname:
+        name: "{{ lookup('env', 'PI_HOSTNAME') | default('mypi', true) }}"
+      notify: Reboot required
+      tags: hostname
+
     # === EEPROM FIRMWARE ===
     - name: Check EEPROM update status
       command: rpi-eeprom-update
@@ -458,6 +472,7 @@
             SSH password auth: disabled
 
           SYSTEM:
+            Hostname: {{ ansible_facts['hostname'] }}
             Uptime: {{ uptime_info.stdout }}
             CPU temp: {{ cpu_temp.stdout | regex_replace('temp=', '') }}
             EEPROM:  {{ eeprom_ver.stdout | regex_search('CURRENT:.*') }}
