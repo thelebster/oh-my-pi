@@ -2,7 +2,7 @@
 
 -include .env
 
-export PI_HOST ?= pihub.local
+export PI_HOST ?= mypi.local
 export PI_USER ?= pi
 export SSH_KEY ?=
 
@@ -10,6 +10,8 @@ export CF_API_TOKEN ?=
 export CF_ZONE_ID ?=
 export CF_DOMAIN ?=
 export CF_TUNNEL_TOKEN ?=
+export CF_TUNNEL_SSH_HOST ?=
+export CF_TUNNEL_HTTP_HOST ?=
 
 SSH_KEY_OPT := $(if $(SSH_KEY),-i $(SSH_KEY))
 SSH = ssh$(if $(SSH_KEY_OPT), $(SSH_KEY_OPT)) $(PI_USER)@$(PI_HOST)
@@ -32,7 +34,7 @@ status:
 
 ## ping    : Test connection to Pi.
 ping:
-	ansible pihub -m ping
+	ansible mypi -m ping
 
 ## verbose : Run playbook with verbose output.
 verbose:
@@ -51,7 +53,7 @@ shell: sh
 
 ## ansible-shell : Run command via ansible. Usage: make ansible-shell "ls -la"
 ansible-shell:
-	@ansible pihub -m shell -a "$(filter-out $@,$(MAKECMDGOALS))"
+	@ansible mypi -m shell -a "$(filter-out $@,$(MAKECMDGOALS))"
 
 ## claude  : Run Claude on Pi. Usage: make claude "hello"
 claude:
@@ -73,15 +75,15 @@ poweroff:
 
 ## sys-status  : Service status. Usage: make sys-status nginx
 sys-status:
-	@ansible pihub -m shell -a "systemctl status $(filter-out $@,$(MAKECMDGOALS))"
+	@ansible mypi -m shell -a "systemctl status $(filter-out $@,$(MAKECMDGOALS))"
 
 ## sys-restart : Restart service. Usage: make sys-restart nginx
 sys-restart:
-	@ansible pihub -m shell -a "systemctl restart $(filter-out $@,$(MAKECMDGOALS))"
+	@ansible mypi -m shell -a "systemctl restart $(filter-out $@,$(MAKECMDGOALS))"
 
 ## sys-enable  : Enable service on boot. Usage: make sys-enable nginx
 sys-enable:
-	@ansible pihub -m shell -a "systemctl enable $(filter-out $@,$(MAKECMDGOALS))"
+	@ansible mypi -m shell -a "systemctl enable $(filter-out $@,$(MAKECMDGOALS))"
 
 ## sys-logs    : Follow service logs. Usage: make sys-logs nginx
 sys-logs:

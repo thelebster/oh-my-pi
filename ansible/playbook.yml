@@ -1,6 +1,6 @@
 ---
 - name: Setup Raspberry Pi 5
-  hosts: pihub
+  hosts: mypi
   become: true
 
   tasks:
@@ -166,7 +166,7 @@
           CF_DOMAIN={{ lookup("env", "CF_DOMAIN") }}
         dest: /etc/cloudflare-ddns.env
         mode: "0600"
-      when: lookup("env", "CF_API_TOKEN") != ""
+      when: lookup("env", "CF_DOMAIN") != ""
       tags: ddns
 
     - name: Deploy Cloudflare DDNS update script
@@ -174,14 +174,14 @@
         src: scripts/cloudflare-ddns.sh
         dest: /usr/local/bin/cloudflare-ddns.sh
         mode: "0700"
-      when: lookup("env", "CF_API_TOKEN") != ""
+      when: lookup("env", "CF_DOMAIN") != ""
       tags: ddns
 
     - name: Install dnsutils for dig command
       apt:
         name: dnsutils
         state: present
-      when: lookup("env", "CF_API_TOKEN") != ""
+      when: lookup("env", "CF_DOMAIN") != ""
       tags: ddns
 
     - name: Add DDNS cron job (every 5 minutes)
@@ -189,15 +189,14 @@
         name: "Cloudflare DDNS update"
         minute: "*/5"
         job: "/usr/local/bin/cloudflare-ddns.sh"
-      when: lookup("env", "CF_API_TOKEN") != ""
+      when: lookup("env", "CF_DOMAIN") != ""
       tags: ddns
 
     - name: Remove DDNS cron job
       cron:
         name: "Cloudflare DDNS update"
         state: absent
-      when: lookup("env", "CF_API_TOKEN") == ""
-      tags: ddns
+      tags: [never, ddns-remove]
 
     - name: Remove DDNS script and env file
       file:
@@ -206,8 +205,7 @@
       loop:
         - /usr/local/bin/cloudflare-ddns.sh
         - /etc/cloudflare-ddns.env
-      when: lookup("env", "CF_API_TOKEN") == ""
-      tags: ddns
+      tags: [never, ddns-remove]
 
     # === CLOUDFLARE TUNNEL (requires CF_TUNNEL_TOKEN) ===
     - name: Add cloudflared apt key
@@ -255,20 +253,33 @@
       when: lookup("env", "CF_TUNNEL_TOKEN") != ""
       tags: tunnel
 
+    - name: Configure tunnel ingress and DNS
+      delegate_to: localhost
+      become: false
+      shell: bash {{ playbook_dir }}/scripts/cloudflare-create-tunnel.sh
+      when: lookup("env", "CF_TUNNEL_TOKEN") != ""
+      changed_when: false
+      tags: tunnel
+
+    - name: Remove tunnel ingress and DNS
+      delegate_to: localhost
+      become: false
+      shell: bash {{ playbook_dir }}/scripts/cloudflare-remove-tunnel.sh
+      when: lookup("env", "CF_TUNNEL_TOKEN") != ""
+      tags: [never, tunnel-remove]
+
     - name: Stop and disable cloudflared
       systemd:
         name: cloudflared
         enabled: false
         state: stopped
-      when: lookup("env", "CF_TUNNEL_TOKEN") == ""
       failed_when: false
-      tags: tunnel
+      tags: [never, tunnel-remove]
 
     - name: Uninstall cloudflared service
       shell: cloudflared service uninstall
-      when: lookup("env", "CF_TUNNEL_TOKEN") == ""
       failed_when: false
-      tags: tunnel
+      tags: [never, tunnel-remove]
 
     # === SSH HARDENING ===
     - name: Disable SSH password authentication

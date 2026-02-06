@@ -41,16 +41,35 @@ make tags       List all available tags.
 
 Exposes services (SSH, HTTP, etc.) through Cloudflare without port forwarding. The Pi opens an outbound connection to Cloudflare's edge — no inbound ports needed.
 
+SSH and HTTP cannot share the same hostname — use separate subdomains (e.g. `ssh-mypi.example.com` for SSH, `mypi.example.com` for HTTP).
+
 1. Go to [Cloudflare Zero Trust](https://one.dash.cloudflare.com/) → Networks → Tunnels → Create
 2. Name your tunnel and copy the token
-3. Add to `.env`:
+3. Create a [Cloudflare API token](https://dash.cloudflare.com/profile/api-tokens) with **Zone DNS Edit** + **Account Cloudflare Tunnel Edit** permissions
+4. Add to `.env`:
    ```
+   CF_API_TOKEN=your-token
+   CF_ZONE_ID=your-zone-id
    CF_TUNNEL_TOKEN=eyJ...
+   CF_TUNNEL_SSH_HOST=ssh-mypi
+   CF_TUNNEL_HTTP_HOST=mypi
    ```
-4. Configure public hostnames in the dashboard (e.g. `ssh.example.com → ssh://localhost:22`)
 5. Run `make run` or `ansible-playbook ansible/playbook.yml --tags tunnel`
 
-Removing `CF_TUNNEL_TOKEN` from `.env` and re-running will stop and uninstall the tunnel service.
+The playbook installs `cloudflared`, starts the service, and configures ingress rules + DNS records automatically via the Cloudflare API.
+
+To completely remove the tunnel (ingress, DNS, and service):
+```bash
+ansible-playbook ansible/playbook.yml --tags tunnel-remove
+```
+
+**Local SSH config** — install `cloudflared` locally and add to `~/.ssh/config`:
+```
+Host mypi-tunnel
+    ProxyCommand cloudflared access ssh --hostname ssh-mypi.example.com
+    User pi
+    IdentityFile ~/.ssh/mypi
+```
 
 ## Optional: Cloudflare DDNS
 
@@ -61,11 +80,14 @@ Updates a Cloudflare DNS A record with the Pi's public IP every 5 minutes. Usefu
    ```
    CF_API_TOKEN=your-token
    CF_ZONE_ID=your-zone-id
-   CF_DOMAIN=pi.example.com
+   CF_DOMAIN=mypi.example.com
    ```
 3. Run `make run` or `ansible-playbook ansible/playbook.yml --tags ddns`
 
-Removing `CF_API_TOKEN` from `.env` and re-running will remove the cron job and scripts from the Pi.
+To remove DDNS (cron, script, and env file):
+```bash
+ansible-playbook ansible/playbook.yml --tags ddns-remove
+```
 
 ## Running without Make
 
@@ -76,3 +98,5 @@ source .env && ansible-playbook ansible/playbook.yml --tags "tunnel,ssh"
 ```
 
 Available tags: `updates`, `eeprom`, `locale`, `docker`, `nginx`, `claude`, `stress`, `connect`, `fan`, `ddns`, `tunnel`, `ssh`, `status`
+
+Removal tags (explicit only): `ddns-remove`, `tunnel-remove`
