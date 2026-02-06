@@ -116,7 +116,9 @@ async def claude_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         proc = await asyncio.create_subprocess_exec(
             "nsenter", "-t", "1", "-m", "-u", "-i", "-n", "--",
-            "su", "-", "pi", "-c", f"claude -p {shlex.quote(prompt)}",
+            "su", "-", "pi", "-c",
+            f"claude -p {shlex.quote(prompt)}"
+            ' --allowedTools "Bash(curl*)" "WebFetch" "WebSearch"',
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
