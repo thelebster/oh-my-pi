@@ -39,6 +39,7 @@
         env:
           TELEGRAM_BOT_TOKEN: "{{ lookup('env', 'TELEGRAM_BOT_TOKEN') }}"
           TELEGRAM_ALLOWED_USERS: "{{ lookup('env', 'TELEGRAM_ALLOWED_USERS') }}"
+          LOG_LEVEL: "{{ lookup('env', 'LOG_LEVEL') | default('INFO', true) }}"
         volumes:
           - /:/hostfs:ro
         recreate: "{{ bot_files.changed }}"

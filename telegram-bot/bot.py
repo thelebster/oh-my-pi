@@ -6,7 +6,8 @@ import logging
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, filters
 
-logging.basicConfig(level=logging.INFO)
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO))
 logger = logging.getLogger(__name__)
 
 ALLOWED_USERS = os.environ["TELEGRAM_ALLOWED_USERS"].split(",")
@@ -105,6 +106,12 @@ CLAUDE_TIMEOUT = int(os.environ.get("CLAUDE_TIMEOUT", "120"))
 
 
 @authorized
+async def throwerr(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = " ".join(context.args) if context.args else "Test error"
+    raise RuntimeError(msg)
+
+
+@authorized
 async def chatid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Chat ID: `{update.effective_chat.id}`", parse_mode="Markdown")
 
@@ -160,7 +167,14 @@ async def post_init(app):
         ("claude", "Ask Claude"),
         ("chatid", "Show chat ID"),
         ("hello", "Say hello"),
+        ("throwerr", "Throw a test error"),
     ])
+
+
+async def error_handler(update, context):
+    logger.error("Exception: %s", context.error)
+    if update and update.effective_message:
+        await update.effective_message.reply_text("Something went wrong.")
 
 
 def main():
@@ -171,6 +185,8 @@ def main():
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("claude", claude_cmd))
     app.add_handler(CommandHandler("chatid", chatid))
+    app.add_handler(CommandHandler("throwerr", throwerr))
+    app.add_error_handler(error_handler)
     logger.info("Bot starting...")
     app.run_polling()
 
