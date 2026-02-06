@@ -1,0 +1,40 @@
+---
+- name: Deploy Telegram bot
+  hosts: mypi
+  become: true
+
+  tasks:
+    - name: Create Telegram bot directory
+      file:
+        path: /opt/telegram-bot
+        state: directory
+        mode: "0755"
+
+    - name: Copy Telegram bot files
+      copy:
+        src: "{{ item }}"
+        dest: /opt/telegram-bot/
+      loop:
+        - ../../telegram-bot/bot.py
+        - ../../telegram-bot/requirements.txt
+        - ../../telegram-bot/Dockerfile
+      register: bot_files
+
+    - name: Build Telegram bot Docker image
+      community.docker.docker_image:
+        name: telegram-bot
+        source: build
+        build:
+          path: /opt/telegram-bot
+        force_source: "{{ bot_files.changed }}"
+
+    - name: Run Telegram bot container
+      community.docker.docker_container:
+        name: telegram-bot
+        image: telegram-bot
+        state: started
+        restart_policy: unless-stopped
+        env:
+          TELEGRAM_BOT_TOKEN: "{{ lookup('env', 'TELEGRAM_BOT_TOKEN') }}"
+          TELEGRAM_ALLOWED_USERS: "{{ lookup('env', 'TELEGRAM_ALLOWED_USERS') }}"
+        recreate: "{{ bot_files.changed }}"

@@ -1,4 +1,4 @@
-.PHONY: help run check status ping verbose tags sh shell claude reboot poweroff ansible-shell ddns sys-status sys-restart sys-enable sys-logs
+.PHONY: help run check status ping verbose tags sh shell claude reboot poweroff ansible-shell ddns bot bot-build bot-run bot-logs sys-status sys-restart sys-enable sys-logs
 
 -include .env
 
@@ -12,6 +12,9 @@ export CF_DOMAIN ?=
 export CF_TUNNEL_TOKEN ?=
 export CF_TUNNEL_SSH_HOST ?=
 export CF_TUNNEL_HTTP_HOST ?=
+
+export TELEGRAM_BOT_TOKEN ?=
+export TELEGRAM_ALLOWED_USERS ?=
 
 SSH_KEY_OPT := $(if $(SSH_KEY),-i $(SSH_KEY))
 SSH = ssh$(if $(SSH_KEY_OPT), $(SSH_KEY_OPT)) $(PI_USER)@$(PI_HOST)
@@ -62,6 +65,22 @@ claude:
 ## ddns    : Run Cloudflare DDNS update locally.
 ddns:
 	bash ansible/scripts/cloudflare-ddns.sh
+
+## bot     : Deploy Telegram bot to Pi.
+bot:
+	./play extra telegram-bot
+
+## bot-build : Build Telegram bot Docker image locally.
+bot-build:
+	docker build -t telegram-bot telegram-bot/
+
+## bot-run : Run Telegram bot locally in Docker.
+bot-run:
+	docker run --rm -e TELEGRAM_BOT_TOKEN -e TELEGRAM_ALLOWED_USERS telegram-bot
+
+## bot-logs : Follow Telegram bot logs on Pi.
+bot-logs:
+	$(SSH) docker logs -f telegram-bot
 
 ## reboot  : Reboot Pi.
 reboot:
