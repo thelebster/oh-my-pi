@@ -7,6 +7,9 @@
 #   ./play --check
 #   ./play --tags "docker"
 #   ./play -v --limit mypi
+#   ./play extra aircrack
+#   ./play extra aircrack --check
+#   ./play extra              (list available extras)
 
 set -euo pipefail
 
@@ -18,4 +21,25 @@ if [ -f .env ]; then
   set +a
 fi
 
-ansible-playbook ansible/playbook.yml "$@"
+EXTRAS_DIR="ansible/extras"
+
+if [ "${1:-}" = "extra" ]; then
+  shift
+  if [ $# -eq 0 ]; then
+    echo "Available extras:"
+    for f in "$EXTRAS_DIR"/*.yml; do
+      [ -f "$f" ] && echo "  $(basename "$f" .yml)"
+    done
+    exit 0
+  fi
+  PLAYBOOK="$EXTRAS_DIR/$1.yml"
+  shift
+  if [ ! -f "$PLAYBOOK" ]; then
+    echo "Error: $PLAYBOOK not found"
+    echo "Run './play extra' to see available extras."
+    exit 1
+  fi
+  ansible-playbook "$PLAYBOOK" "$@"
+else
+  ansible-playbook ansible/playbook.yml "$@"
+fi

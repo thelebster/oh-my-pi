@@ -1,0 +1,24 @@
+---
+- name: Install network tools
+  hosts: mypi
+  become: true
+
+  tasks:
+    - name: Install network tools
+      apt:
+        name:
+          - aircrack-ng         # wireless auditing
+          - nmap                # network scanner
+          - tcpdump             # packet capture
+          - tshark              # wireshark CLI
+          - iperf3              # bandwidth testing
+          - mtr                 # traceroute + ping
+          - hping3              # packet crafting
+          - dnsutils            # dig, nslookup
+          - whois               # domain lookups
+          - net-tools           # ifconfig, netstat
+          - netcat-openbsd      # netcat
+          - nikto               # web server scanner
+          - masscan             # fast port scanner
+        state: present
+      tags: network

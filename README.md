@@ -89,6 +89,19 @@ To remove DDNS (cron, script, and env file):
 ./play --tags ddns-remove
 ```
 
+## Extra Playbooks
+
+Optional tool bundles that run separately from the main playbook:
+
+```bash
+./play extra                    # List available extras
+./play extra network            # Install network tools
+./play extra network --check    # Dry run
+```
+
+Available extras:
+- **network** — nmap, whois, dnsutils, netcat, ...
+
 ## Running without Make
 
 Use the wrapper scripts — they source `.env` automatically:
@@ -96,6 +109,7 @@ Use the wrapper scripts — they source `.env` automatically:
 ```bash
 ./play                          # Run full playbook
 ./play --tags "tunnel,ssh"      # Run specific tags
+./play extra network            # Run an extra playbook
 ./cmd -m ping                # Ad-hoc: test connection
 ./cmd -m shell -a 'uptime'   # Ad-hoc: run command
 ```
