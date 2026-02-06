@@ -1,4 +1,9 @@
-.PHONY: help run check status ping verbose tags sh shell claude reboot poweroff ansible-shell ddns bot bot-build bot-run bot-logs sys-status sys-restart sys-enable sys-logs
+.PHONY: \
+	help run check status ping verbose tags \
+	sh shell ansible-shell claude \
+	ddns bot bot-build bot-run bot-logs bot-get-chat-id \
+	reboot poweroff \
+	sys-status sys-restart sys-enable sys-logs
 
 -include .env
 
@@ -81,6 +86,14 @@ bot-run:
 ## bot-logs : Follow Telegram bot logs on Pi.
 bot-logs:
 	$(SSH) docker logs -f telegram-bot
+
+## bot-get-chat-id : Get chat ID (send a message to bot first).
+bot-get-chat-id:
+	@echo "Fetching recent messages... (send a message to your bot first)"
+	@curl -s "https://api.telegram.org/bot$(TELEGRAM_BOT_TOKEN)/getUpdates" | \
+		grep -o '"chat":{"id":[0-9-]*' | \
+		sed 's/"chat":{"id":/Chat ID: /' | \
+		sort -u
 
 ## reboot  : Reboot Pi.
 reboot:

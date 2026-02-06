@@ -105,6 +105,11 @@ CLAUDE_TIMEOUT = int(os.environ.get("CLAUDE_TIMEOUT", "120"))
 
 
 @authorized
+async def chatid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(f"Chat ID: `{update.effective_chat.id}`", parse_mode="Markdown")
+
+
+@authorized
 async def claude_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prompt = " ".join(context.args) if context.args else ""
     if not prompt:
@@ -153,6 +158,7 @@ async def post_init(app):
     await app.bot.set_my_commands([
         ("status", "Pi system info"),
         ("claude", "Ask Claude"),
+        ("chatid", "Show chat ID"),
         ("hello", "Say hello"),
     ])
 
@@ -164,6 +170,7 @@ def main():
     app.add_handler(CommandHandler("hello", hello))
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("claude", claude_cmd))
+    app.add_handler(CommandHandler("chatid", chatid))
     logger.info("Bot starting...")
     app.run_polling()
 
