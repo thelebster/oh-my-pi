@@ -187,6 +187,55 @@ Ensure the hostname in `~/.ssh/config` ProxyCommand matches the actual DNS recor
 dig @1.1.1.1 <your-ssh-hostname> +short
 ```
 
+## Tor Hidden Service
+
+```bash
+systemctl status tor               # service status
+journalctl -u tor -f               # follow logs
+cat /var/lib/tor/hidden_service/hostname  # .onion address
+```
+
+### Vanity .onion Address
+
+Generate a custom-prefix .onion address using [mkp224o](https://github.com/cathugger/mkp224o). Run on your Mac for faster generation (Pi 5 works too, just slower).
+
+**Install mkp224o (macOS):**
+
+```bash
+brew install autoconf libsodium
+git clone https://github.com/cathugger/mkp224o
+cd mkp224o
+./autogen.sh && ./configure && make
+```
+
+**Generate:**
+
+```bash
+./mkp224o -d output -n 1 mypi     # find 1 address starting with "mypi"
+```
+
+Approximate times (per character of prefix):
+- 3 chars: seconds
+- 4 chars: minutes
+- 5 chars: tens of minutes
+- 6+ chars: hours to days
+
+**Deploy to Pi:**
+
+Place generated keys in `.tor/` at the project root, then set in `.env`:
+
+```bash
+TOR_VANITY_KEYS_DIR=.tor/mypixxxxxxx.onion
+```
+
+Run the playbook:
+
+```bash
+./play extra tor
+```
+
+Alternatively, set `TOR_VANITY_PREFIX=mypi` to generate directly on the Pi (no `TOR_VANITY_KEYS_DIR` needed).
+
 ## Updates
 
 ```bash

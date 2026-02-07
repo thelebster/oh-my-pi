@@ -102,6 +102,8 @@ Optional tool bundles that run separately from the main playbook:
 Available extras:
 - **ai-camera** — AI HAT+ (Hailo-8) drivers + Camera Module 3 + rpicam-apps
 - **network** — nmap, whois, dnsutils, netcat, ...
+- **pihole** — Pi-hole DNS ad blocker (Docker)
+- **tor** — Tor hidden service (.onion) with optional vanity address
 
 ## Running without Make
 

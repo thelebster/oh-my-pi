@@ -1,0 +1,58 @@
+---
+- name: Deploy Pi-hole DNS server
+  hosts: mypi
+  become: true
+
+  tasks:
+    - name: Create Pi-hole directory
+      file:
+        path: /opt/pihole
+        state: directory
+        mode: "0755"
+
+    - name: Copy docker-compose file
+      copy:
+        src: ../../pihole/docker-compose.yml
+        dest: /opt/pihole/docker-compose.yml
+      register: compose_file
+
+    - name: Deploy Pi-hole env file
+      copy:
+        content: |
+          PIHOLE_TZ={{ lookup('env', 'PIHOLE_TZ') | default('UTC', true) }}
+        dest: /opt/pihole/.env
+        mode: "0600"
+      register: env_file
+
+    - name: Stop systemd-resolved (frees port 53)
+      systemd:
+        name: systemd-resolved
+        state: stopped
+        enabled: false
+      failed_when: false
+
+    - name: Start Pi-hole with docker compose
+      community.docker.docker_compose_v2:
+        project_src: /opt/pihole
+        state: present
+        pull: "{{ 'always' if compose_file.changed else 'missing' }}"
+      register: pihole_result
+
+    - name: Restart Pi-hole if config changed
+      community.docker.docker_compose_v2:
+        project_src: /opt/pihole
+        state: restarted
+      when: env_file.changed and not pihole_result.changed
+
+    - name: Set Pi-hole admin password
+      shell: docker exec pihole pihole setpassword '{{ lookup("env", "PIHOLE_PASSWORD") }}'
+      when: lookup("env", "PIHOLE_PASSWORD") != ""
+      changed_when: false
+      no_log: true
+
+    - name: Show Pi-hole status
+      debug:
+        msg: |
+          Pi-hole is running!
+          Admin UI: http://{{ ansible_facts['default_ipv4']['address'] }}:8080/admin
+          {{ 'Password: set via PIHOLE_PASSWORD' if lookup('env', 'PIHOLE_PASSWORD') != '' else 'Password: use "docker exec pihole pihole setpassword" on the Pi' }}

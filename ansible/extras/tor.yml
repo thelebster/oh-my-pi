@@ -1,0 +1,167 @@
+---
+- name: Setup Tor hidden service
+  hosts: mypi
+  become: true
+
+  vars:
+    tor_hidden_service_port: "{{ lookup('env', 'TOR_HIDDEN_SERVICE_PORT') | default('80', true) }}"
+    tor_hidden_service_target: "{{ lookup('env', 'TOR_HIDDEN_SERVICE_TARGET') | default('127.0.0.1:80', true) }}"
+    tor_vanity_keys_dir: "{{ lookup('env', 'TOR_VANITY_KEYS_DIR') | default('', true) }}"
+    tor_vanity_prefix: "{{ lookup('env', 'TOR_VANITY_PREFIX') | default('', true) }}"
+
+  tasks:
+    - name: Install Tor
+      apt:
+        name: tor
+        state: present
+
+    - name: Configure Tor hidden service
+      blockinfile:
+        path: /etc/tor/torrc
+        marker: "# {mark} ANSIBLE MANAGED - HIDDEN SERVICE"
+        block: |
+          HiddenServiceDir /var/lib/tor/hidden_service/
+          HiddenServicePort {{ tor_hidden_service_port }} {{ tor_hidden_service_target }}
+      notify: Restart Tor
+
+    - name: Check for existing hidden service keys
+      stat:
+        path: /var/lib/tor/hidden_service/hs_ed25519_secret_key
+      register: existing_hs_keys
+
+    # === DEPLOY PRE-GENERATED KEYS (set TOR_VANITY_KEYS_DIR) ===
+    - name: Create hidden service directory
+      file:
+        path: /var/lib/tor/hidden_service
+        state: directory
+        owner: debian-tor
+        group: debian-tor
+        mode: "0700"
+      when:
+        - tor_vanity_keys_dir != "" or tor_vanity_prefix != ""
+        - not existing_hs_keys.stat.exists
+
+    - name: Deploy pre-generated vanity keys
+      copy:
+        src: "{{ playbook_dir }}/../../{{ tor_vanity_keys_dir }}/{{ item }}"
+        dest: /var/lib/tor/hidden_service/{{ item }}
+        owner: debian-tor
+        group: debian-tor
+        mode: "0600"
+      loop:
+        - hostname
+        - hs_ed25519_public_key
+        - hs_ed25519_secret_key
+      when:
+        - tor_vanity_keys_dir != ""
+        - not existing_hs_keys.stat.exists
+      notify: Restart Tor
+
+    # === GENERATE ON PI (set TOR_VANITY_PREFIX, no TOR_VANITY_KEYS_DIR) ===
+    - name: Validate vanity prefix (must be base32)
+      assert:
+        that: tor_vanity_prefix is match('^[a-z2-7]+$')
+        fail_msg: "TOR_VANITY_PREFIX must only contain lowercase a-z and digits 2-7 (base32)"
+      when:
+        - tor_vanity_prefix != ""
+        - tor_vanity_keys_dir == ""
+
+    - name: Install mkp224o build dependencies
+      apt:
+        name: [git, gcc, make, libsodium-dev, autoconf]
+        state: present
+      when:
+        - tor_vanity_prefix != ""
+        - tor_vanity_keys_dir == ""
+
+    - name: Clone mkp224o
+      git:
+        repo: https://github.com/cathugger/mkp224o
+        dest: /opt/mkp224o
+      when:
+        - tor_vanity_prefix != ""
+        - tor_vanity_keys_dir == ""
+
+    - name: Build mkp224o
+      shell: ./autogen.sh && ./configure && make
+      args:
+        chdir: /opt/mkp224o
+        creates: /opt/mkp224o/mkp224o
+      when:
+        - tor_vanity_prefix != ""
+        - tor_vanity_keys_dir == ""
+
+    - name: Generate vanity .onion address (this may take a while)
+      shell: |
+        rm -rf /tmp/vanity-onion
+        ./mkp224o -d /tmp/vanity-onion -n 1 '{{ tor_vanity_prefix }}'
+      args:
+        chdir: /opt/mkp224o
+      timeout: 3600
+      when:
+        - tor_vanity_prefix != ""
+        - tor_vanity_keys_dir == ""
+        - not existing_hs_keys.stat.exists
+      register: vanity_generated
+
+    - name: Find generated vanity directory
+      find:
+        paths: /tmp/vanity-onion
+        file_type: directory
+        patterns: "*.onion"
+      register: vanity_dirs
+      when: vanity_generated.changed | default(false)
+
+    - name: Deploy generated vanity keys
+      copy:
+        src: "{{ vanity_dirs.files[0].path }}/{{ item }}"
+        dest: /var/lib/tor/hidden_service/{{ item }}
+        remote_src: true
+        owner: debian-tor
+        group: debian-tor
+        mode: "0600"
+      loop:
+        - hostname
+        - hs_ed25519_public_key
+        - hs_ed25519_secret_key
+      when: vanity_generated.changed | default(false)
+      notify: Restart Tor
+
+    - name: Clean up vanity temp files
+      file:
+        path: /tmp/vanity-onion
+        state: absent
+      when: vanity_generated.changed | default(false)
+
+    # === START AND VERIFY ===
+    - name: Enable and start Tor
+      systemd:
+        name: tor
+        enabled: true
+        state: started
+
+    - name: Flush handlers to ensure Tor is restarted
+      meta: flush_handlers
+
+    - name: Wait for hidden service hostname file
+      wait_for:
+        path: /var/lib/tor/hidden_service/hostname
+        timeout: 30
+
+    - name: Read .onion hostname
+      slurp:
+        src: /var/lib/tor/hidden_service/hostname
+      register: onion_hostname
+
+    - name: Show Tor hidden service info
+      debug:
+        msg: |
+          Tor hidden service is running!
+          .onion address: {{ onion_hostname.content | b64decode | trim }}
+          Forwarding port {{ tor_hidden_service_port }} -> {{ tor_hidden_service_target }}
+
+  handlers:
+    - name: Restart Tor
+      systemd:
+        name: tor
+        state: restarted
