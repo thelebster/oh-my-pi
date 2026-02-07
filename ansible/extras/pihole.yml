@@ -35,7 +35,7 @@
       community.docker.docker_compose_v2:
         project_src: /opt/pihole
         state: present
-        pull: "{{ 'always' if compose_file.changed else 'missing' }}"
+        pull: missing
       register: pihole_result
 
     - name: Restart Pi-hole if config changed
@@ -43,6 +43,42 @@
         project_src: /opt/pihole
         state: restarted
       when: env_file.changed and not pihole_result.changed
+
+    - name: Wait for Pi-hole config to be ready
+      shell: docker exec pihole test -f /etc/pihole/pihole.toml
+      retries: 10
+      delay: 3
+      register: config_ready
+      until: config_ready.rc == 0
+      changed_when: false
+
+    - name: Configure upstream DNS servers (Google + Cloudflare)
+      shell: |
+        docker exec pihole sh -c '
+          if grep -q "1.1.1.1" /etc/pihole/pihole.toml && grep -q "1.0.0.1" /etc/pihole/pihole.toml; then
+            exit 0
+          fi
+          sed -i "/^  upstreams = \[/,/^  \]/c\  upstreams = [\n    \"8.8.8.8\",\n    \"8.8.4.4\",\n    \"1.1.1.1\",\n    \"1.0.0.1\"\n  ]" /etc/pihole/pihole.toml
+          echo CHANGED
+        '
+      register: upstream_result
+      changed_when: "'CHANGED' in upstream_result.stdout"
+
+    - name: Enable DNSSEC validation
+      shell: |
+        docker exec pihole sh -c '
+          if grep -q "dnssec = true" /etc/pihole/pihole.toml; then
+            exit 0
+          fi
+          sed -i "s/dnssec = false/dnssec = true/" /etc/pihole/pihole.toml
+          echo CHANGED
+        '
+      register: dnssec_result
+      changed_when: "'CHANGED' in dnssec_result.stdout"
+
+    - name: Reload Pi-hole DNS config
+      shell: docker exec pihole pihole reloaddns
+      when: upstream_result.changed or dnssec_result.changed
 
     - name: Set Pi-hole admin password
       shell: docker exec pihole pihole setpassword '{{ lookup("env", "PIHOLE_PASSWORD") }}'
