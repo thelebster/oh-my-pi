@@ -34,6 +34,8 @@ if [[ -n "${CF_TUNNEL_HTTP_HOST:-}" ]]; then
   FQDN="${CF_TUNNEL_HTTP_HOST}.${ZONE_NAME}"
   INGRESS=$(echo "$INGRESS" | jq --arg h "$FQDN" '. + [{"hostname": $h, "service": "http://localhost:80", "originRequest": {}}]')
   echo "Route: ${FQDN} -> http://localhost:80"
+  INGRESS=$(echo "$INGRESS" | jq --arg h "$FQDN" '. + [{"hostname": $h, "service": "https://localhost:443", "originRequest": {"noTLSVerify": true}}]')
+  echo "Route: ${FQDN} -> https://localhost:443"
 fi
 
 if [[ -n "${CF_TUNNEL_SSH_HOST:-}" ]]; then
