@@ -9,6 +9,7 @@ services:
       - "8080:80/tcp"
     environment:
       TZ: ${PIHOLE_TZ:-UTC}
+      FTLCONF_dns_listeningMode: all
     volumes:
       - pihole_data:/etc/pihole
       - dnsmasq_data:/etc/dnsmasq.d

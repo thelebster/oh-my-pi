@@ -119,6 +119,40 @@ AI demo scripts (installed to `~/scripts/`, Ctrl+C to stop):
 - [Hailo RPi5 examples](https://github.com/hailo-ai/hailo-rpi5-examples)
 - [Hailo Model Explorer](https://hailo.ai/products/hailo-software/model-explorer/)
 
+## Pi-hole
+
+```bash
+# Test DNS resolution (from Mac)
+dig google.com @mypi.local +short
+
+# Test ad-blocking (should return 0.0.0.0)
+dig ads.google.com @mypi.local +short
+
+# Container status
+docker ps --filter name=pihole
+
+# View logs
+docker logs pihole --tail 30
+
+# Pi-hole status (inside container)
+docker exec pihole pihole status
+
+# Restart
+docker restart pihole
+```
+
+Admin UI: `http://mypi.local:8080/admin`
+
+## macOS Network
+
+```bash
+ipconfig getifaddr en0                        # Mac's IP address
+networksetup -getdnsservers Wi-Fi             # Current DNS servers
+networksetup -setdnsservers Wi-Fi 192.168.100.60  # Use Pi-hole as DNS
+networksetup -setdnsservers Wi-Fi empty       # Revert to default DNS
+sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder  # Flush DNS cache
+```
+
 ## Cloudflare Tunnel
 
 On the Pi (managed by playbook):

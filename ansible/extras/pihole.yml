@@ -44,6 +44,17 @@
         state: restarted
       when: env_file.changed and not pihole_result.changed
 
+    - name: Check if UFW is active
+      command: ufw status
+      register: ufw_status
+      changed_when: false
+
+    - name: Allow DNS (port 53) through UFW
+      ufw:
+        rule: allow
+        port: "53"
+      when: "'Status: active' in ufw_status.stdout"
+
     - name: Wait for Pi-hole config to be ready
       shell: docker exec pihole test -f /etc/pihole/pihole.toml
       retries: 10

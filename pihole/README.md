@@ -27,6 +27,71 @@ PIHOLE_TZ=Asia/Jerusalem       # Your timezone
 - `systemd-resolved` is stopped to free port 53
 - Data is persisted in Docker named volumes (`pihole_data`, `dnsmasq_data`)
 
+## Testing
+
+**From your Mac:**
+
+```bash
+# Should resolve normally
+dig google.com @mypi.local +short
+
+# Should return 0.0.0.0 (blocked)
+dig ads.google.com @mypi.local +short
+
+# Check admin API
+curl http://mypi.local:8080/admin/api.php?summary
+```
+
+**From the Pi:**
+
+```bash
+# Test locally
+./cmd -m shell -a "dig google.com @127.0.0.1 +short"
+
+# Check container health
+./cmd -m shell -a "docker ps --filter name=pihole"
+
+# Pi-hole built-in status
+./cmd -m shell -a "docker exec pihole pihole status"
+```
+
+## Troubleshooting
+
+**DNS queries timeout from other devices**
+
+Check UFW allows port 53:
+
+```bash
+./cmd -m shell -a "ufw status | grep 53"
+```
+
+If missing, redeploy with `./play extra pihole` — it adds the rule automatically.
+
+**"ignoring query from non-local network" in logs**
+
+Pi-hole rejects queries that appear to come from outside its Docker network. The `FTLCONF_dns_listeningMode=all` env var in `docker-compose.yml` fixes this. If you see this error, make sure that variable is set and redeploy.
+
+**Container is running but DNS doesn't resolve**
+
+```bash
+# Check Pi-hole logs for errors
+./cmd -m shell -a "docker logs pihole --tail 30"
+
+# Check nothing else is using port 53
+./cmd -m shell -a "ss -tulnp | grep :53"
+
+# Restart the container
+./cmd -m shell -a "docker restart pihole"
+```
+
+**Port 53 conflict with systemd-resolved**
+
+The playbook stops `systemd-resolved` automatically. If it gets re-enabled after a reboot:
+
+```bash
+./cmd -m shell -a "systemctl stop systemd-resolved && systemctl disable systemd-resolved"
+```
+
 ## Configure Devices to Use Pi-hole
 
 ### Option A: Router-level (recommended)
