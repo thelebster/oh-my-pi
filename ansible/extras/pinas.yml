@@ -4,6 +4,13 @@
   become: true
 
   tasks:
+    # === SMB FIREWALL ===
+    - name: Allow SMB through firewall
+      ufw:
+        rule: allow
+        port: "445"
+      tags: smb
+
     # === RAID SOFTWARE ===
     - name: Install mdadm for RAID management
       apt:
