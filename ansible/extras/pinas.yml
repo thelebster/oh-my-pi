@@ -170,17 +170,30 @@
         dev: /dev/md0
       tags: raid
 
+    - name: Read current mdadm array scan output
+      command: mdadm --detail --scan
+      register: mdadm_scan
+      changed_when: false
+      tags: raid
+
+    - name: Remove conflicting /dev/md/0 entry from mdadm config
+      lineinfile:
+        path: /etc/mdadm/mdadm.conf
+        regexp: "^ARRAY /dev/md/0 "
+        state: absent
+      tags: raid
+
     - name: Save mdadm config for boot persistence
-      shell: mdadm --detail --scan >> /etc/mdadm/mdadm.conf
-      args:
-        creates: /etc/mdadm/mdadm.conf.ansible
+      lineinfile:
+        path: /etc/mdadm/mdadm.conf
+        line: "{{ mdadm_scan.stdout }}"
+        regexp: "^ARRAY /dev/md0 "
+        state: present
       notify: Update initramfs
       tags: raid
 
-    - name: Mark mdadm config as saved
-      file:
-        path: /etc/mdadm/mdadm.conf.ansible
-        state: touch
+    - name: Ensure initramfs has latest mdadm config
+      command: update-initramfs -u
       changed_when: false
       tags: raid
 
