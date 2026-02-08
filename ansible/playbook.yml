@@ -118,6 +118,13 @@
         state: started
       tags: ssh
 
+    # === RASPBERRY PI CONNECT ===
+    - name: Install rpi-connect
+      apt:
+        name: rpi-connect
+        state: present
+      tags: connect
+
   handlers:
     - name: Reboot required
       debug:
@@ -249,13 +256,6 @@
         name: [stress-ng, sysbench, iperf3]
         state: present
       tags: stress
-
-    # === RASPBERRY PI CONNECT ===
-    - name: Install rpi-connect
-      apt:
-        name: rpi-connect
-        state: present
-      tags: connect
 
     # === FAN CONFIGURATION ===
     - name: Configure fan temperature thresholds

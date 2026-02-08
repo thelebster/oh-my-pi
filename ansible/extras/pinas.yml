@@ -4,13 +4,6 @@
   become: true
 
   tasks:
-    # === REMOTE ACCESS ===
-    - name: Install rpi-connect
-      apt:
-        name: rpi-connect
-        state: present
-      tags: connect
-
     # === RAID SOFTWARE ===
     - name: Install mdadm for RAID management
       apt:
