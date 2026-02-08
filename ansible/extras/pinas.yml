@@ -185,11 +185,6 @@
       notify: Update initramfs
       tags: raid
 
-    - name: Ensure initramfs has latest mdadm config
-      command: update-initramfs -u
-      changed_when: false
-      tags: raid
-
     # === CHECK SSDs ===
     - name: List block devices
       command: lsblk -o NAME,SIZE,TYPE,MOUNTPOINT,MODEL
