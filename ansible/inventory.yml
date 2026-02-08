@@ -13,3 +13,8 @@ all:
       ansible_user: "{{ lookup('env', 'ZERO_PI_USER') | default('pi', true) }}"
       ansible_ssh_private_key_file: "{{ lookup('env', 'ZERO_PI_SSH_KEY') | default('~/.ssh/zeropi', true) }}"
       pi_hostname: "{{ lookup('env', 'ZERO_PI_HOSTNAME') | default('zeropi', true) }}"
+    pinas:
+      ansible_host: "{{ lookup('env', 'PINAS_HOST') | default('pinas.local', true) }}"
+      ansible_user: "{{ lookup('env', 'PINAS_USER') | default('pi', true) }}"
+      ansible_ssh_private_key_file: "{{ lookup('env', 'PINAS_SSH_KEY') | default('~/.ssh/pinas', true) }}"
+      pi_hostname: "{{ lookup('env', 'PINAS_HOSTNAME') | default('pinas', true) }}"
