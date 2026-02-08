@@ -1,6 +1,6 @@
 # PiNAS - Raspberry Pi NAS
 
-Raspberry Pi NAS with OpenMediaVault and RAID0 storage.
+Raspberry Pi NAS with OpenMediaVault and RAID1 storage.
 
 ## Hardware
 
@@ -14,7 +14,7 @@ Raspberry Pi NAS with OpenMediaVault and RAID0 storage.
 # Common setup (packages, locale, SSH hardening)
 ./play --limit pinas
 
-# NAS setup (OMV + RAID0)
+# NAS setup (OMV + RAID1)
 ./play extra pinas
 ```
 
@@ -23,7 +23,7 @@ Raspberry Pi NAS with OpenMediaVault and RAID0 storage.
 - WiFi/ethernet network protection (survives OMV's NetworkManager removal)
 - mdadm installation
 - OpenMediaVault + MD (RAID) plugin
-- RAID0 array creation (`/dev/md0` from `/dev/nvme0n1` + `/dev/nvme1n1`)
+- RAID1 array creation (`/dev/md0` from `/dev/nvme0n1` + `/dev/nvme1n1`)
 - ext4 filesystem on the array
 - mdadm config persistence (survives reboots)
 
@@ -71,9 +71,25 @@ Finder will prompt for the username and password created above.
 | Device | Size | Type | Purpose |
 |--------|------|------|---------|
 | mmcblk0 | 14.9G | SD card | OS (boot + root) |
-| nvme0n1 | 931.5G | NVMe SSD | RAID0 member |
-| nvme1n1 | 931.5G | NVMe SSD | RAID0 member |
-| md0 | 1.82 TiB | RAID0 | NAS storage (ext4) |
+| nvme0n1 | 931.5G | NVMe SSD | RAID1 member |
+| nvme1n1 | 931.5G | NVMe SSD | RAID1 member |
+| md0 | 1.82 TiB | RAID1 | NAS storage (ext4) |
+
+## RAID Levels
+
+The playbook creates the array with `mdadm --create`. To change the RAID level, edit the `Create new RAID1 array` task in `ansible/extras/pinas.yml`:
+
+| | RAID1 (striping) | RAID1 (mirroring) |
+|---|---|---|
+| **Speed** | 2x read/write (both disks in parallel) | 1x write, 2x read |
+| **Capacity** | Full (both disks combined) | Half (data duplicated) |
+| **Redundancy** | None — one disk fails, all data lost | Survives one disk failure |
+| **Use case** | Max performance/capacity, data is replaceable | Data safety matters |
+| **mdadm flag** | `--level=0` | `--level=1` |
+
+Current playbook uses **RAID1**. To switch to RAID0, change `--level=1` to `--level=0` before first run.
+
+**Warning:** Changing RAID level requires destroying and recreating the array. Back up data first.
 
 ## Tags
 

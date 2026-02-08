@@ -152,8 +152,8 @@
       when: raid_check.rc != 0
       tags: raid
 
-    - name: Create new RAID0 array from two NVMe SSDs
-      shell: yes | mdadm --create /dev/md0 --level=0 --raid-devices=2 /dev/nvme0n1 /dev/nvme1n1
+    - name: Create new RAID1 array from two NVMe SSDs
+      shell: yes | mdadm --create /dev/md0 --level=1 --raid-devices=2 /dev/nvme0n1 /dev/nvme1n1
       when: raid_check.rc != 0 and raid_assemble.rc != 0
       tags: raid
 
