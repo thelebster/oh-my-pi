@@ -79,7 +79,7 @@ Finder will prompt for the username and password created above.
 
 The playbook creates the array with `mdadm --create`. To change the RAID level, edit the `Create new RAID1 array` task in `ansible/extras/pinas.yml`:
 
-| | RAID1 (striping) | RAID1 (mirroring) |
+| | RAID0 (striping) | RAID1 (mirroring) |
 |---|---|---|
 | **Speed** | 2x read/write (both disks in parallel) | 1x write, 2x read |
 | **Capacity** | Full (both disks combined) | Half (data duplicated) |
@@ -89,7 +89,54 @@ The playbook creates the array with `mdadm --create`. To change the RAID level, 
 
 Current playbook uses **RAID1**. To switch to RAID0, change `--level=1` to `--level=0` before first run.
 
-**Warning:** Changing RAID level requires destroying and recreating the array. Back up data first.
+**Note:** RAID1 mirrors both disks on creation, which triggers a full resync. With large drives (e.g. 2x 931GB) this can take a long time. The array cannot be mounted in OMV until the resync completes.
+
+Monitor progress:
+```bash
+watch cat /proc/mdstat
+```
+
+### Destroying and recreating an existing array
+
+If you need to change the RAID level on an existing array, **back up all data first** — this destroys everything on the array.
+
+```bash
+# 1. Unmount the array (if mounted)
+sudo umount /dev/md0
+
+# 2. Stop the array
+sudo mdadm --stop /dev/md0
+
+# 3. Clear RAID superblocks from both drives
+sudo mdadm --zero-superblock /dev/nvme0n1 /dev/nvme1n1
+```
+
+If `umount` fails, check what's using it with `lsblk` or `mount | grep md0`.
+
+After destroying, run the playbook to recreate with the new RAID level:
+```bash
+./play extra pinas --tags raid
+```
+
+If OMV still shows the old array entry and won't let you delete/mount via the UI:
+```bash
+# Remove stale mount entry from OMV database
+sudo omv-confdbadm delete "conf.system.filesystem.mountpoint" --filter '{"operator":"stringEquals","arg0":"fsname","arg1":"/dev/md0"}'
+
+# Refresh fstab
+sudo omv-salt deploy run fstab
+
+# Rescan and restart OMV engine
+sudo omv-mkconf mdadm
+sudo monit restart omv-engined
+```
+
+Then refresh the OMV web UI — the new array should appear under Storage → File Systems.
+
+Check array health:
+```bash
+sudo mdadm --detail /dev/md0
+```
 
 ## Tags
 

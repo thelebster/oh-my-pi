@@ -1,5 +1,5 @@
 ---
-- name: Setup Pi NAS (OpenMediaVault + RAID0)
+- name: Setup Pi NAS (OpenMediaVault + RAID1)
   hosts: pinas
   become: true
 
