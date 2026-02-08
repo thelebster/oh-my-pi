@@ -136,6 +136,38 @@
       become: false
       tags: claude
 
+    - name: Create Claude settings directory
+      file:
+        path: /home/{{ ansible_user }}/.claude
+        state: directory
+        owner: "{{ ansible_user }}"
+        mode: "0755"
+      tags: claude
+
+    - name: Deploy Claude settings
+      copy:
+        src: files/claude-settings.json
+        dest: /home/{{ ansible_user }}/.claude/settings.json
+        owner: "{{ ansible_user }}"
+        mode: "0644"
+      tags: claude
+
+    - name: Deploy Claude system prompt
+      copy:
+        src: files/claude-prompt.md
+        dest: /home/{{ ansible_user }}/.claude/prompt.md
+        owner: "{{ ansible_user }}"
+        mode: "0644"
+      tags: claude
+
+    - name: Deploy Claude runner script
+      copy:
+        src: scripts/claude.sh
+        dest: /home/{{ ansible_user }}/.local/bin/claude-cmd
+        owner: "{{ ansible_user }}"
+        mode: "0755"
+      tags: claude
+
     # === STRESS TESTING ===
     - name: Install stress tools
       apt:

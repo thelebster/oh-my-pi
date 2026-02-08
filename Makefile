@@ -1,6 +1,6 @@
 .PHONY: \
 	help run check status ping verbose tags \
-	sh shell ansible-shell claude \
+	sh shell ansible-shell claude claude-resume \
 	ddns bot bot-build bot-run bot-logs bot-get-chat-id \
 	reboot poweroff \
 	sys-status sys-restart sys-enable sys-logs
@@ -20,6 +20,8 @@ export CF_TUNNEL_HTTP_HOST ?=
 
 export TELEGRAM_BOT_TOKEN ?=
 export TELEGRAM_ALLOWED_USERS ?=
+
+export CLAUDE_DANGEROUS_MODE ?=
 
 SSH_KEY_OPT := $(if $(SSH_KEY),-i $(SSH_KEY))
 SSH = ssh$(if $(SSH_KEY_OPT), $(SSH_KEY_OPT)) $(PI_USER)@$(PI_HOST)
@@ -63,9 +65,15 @@ shell: sh
 ansible-shell:
 	@ansible mypi -m shell -a "$(filter-out $@,$(MAKECMDGOALS))"
 
+CLAUDE_DANGER_FLAG := $(if $(filter true,$(CLAUDE_DANGEROUS_MODE)),--dangerously-skip-permissions)
+
 ## claude  : Run Claude on Pi. Usage: make claude "hello"
 claude:
-	@$(SSH) -t 'bash -lc "~/.local/bin/claude -p \"$(filter-out $@,$(MAKECMDGOALS))\""'
+	@$(SSH) -t 'bash -lc "~/.local/bin/claude-cmd \"$(filter-out $@,$(MAKECMDGOALS))\" $(CLAUDE_DANGER_FLAG) | jq -r \".session_id as \\\$$sid | .result + \\\"\\\\nsession: \\\" + \\\$$sid\""'
+
+## claude-resume : Resume Claude session. Usage: make claude-resume SESSION=<id> "prompt"
+claude-resume:
+	@$(SSH) -t 'bash -lc "~/.local/bin/claude-cmd \"$(filter-out $@,$(MAKECMDGOALS))\" $(CLAUDE_DANGER_FLAG) --resume $(SESSION) | jq -r \".session_id as \\\$$sid | .result + \\\"\\\\nsession: \\\" + \\\$$sid\""'
 
 ## ddns    : Run Cloudflare DDNS update locally.
 ddns:

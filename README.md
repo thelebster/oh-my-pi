@@ -35,6 +35,8 @@ make shell      SSH into Pi.
 make ddns       Run Cloudflare DDNS update locally.
 make verbose    Run playbook with verbose output.
 make tags       List all available tags.
+make claude     Run Claude on Pi (JSON output + session ID).
+make claude-resume  Resume Claude session (SESSION=<id>).
 ```
 
 ## Optional: Cloudflare Tunnel
@@ -103,6 +105,7 @@ Available extras:
 - **ai-camera** — AI HAT+ (Hailo-8) drivers + Camera Module 3 + rpicam-apps
 - **network** — nmap, whois, dnsutils, netcat, ...
 - **pihole** — Pi-hole DNS ad blocker (Docker)
+- **telegram-bot** — Telegram bot with Claude integration, system monitoring
 - **tor** — Tor hidden service (.onion) with optional vanity address
 
 ## Running without Make

@@ -40,6 +40,8 @@
           TELEGRAM_BOT_TOKEN: "{{ lookup('env', 'TELEGRAM_BOT_TOKEN') }}"
           TELEGRAM_ALLOWED_USERS: "{{ lookup('env', 'TELEGRAM_ALLOWED_USERS') }}"
           LOG_LEVEL: "{{ lookup('env', 'LOG_LEVEL') | default('INFO', true) }}"
+          CLAUDE_DANGEROUS_MODE: "{{ lookup('env', 'CLAUDE_DANGEROUS_MODE') | default('false', true) }}"
+          PI_USER: "{{ lookup('env', 'PI_USER') | default('pi', true) }}"
         volumes:
           - /:/hostfs:ro
         recreate: "{{ bot_files.changed }}"
