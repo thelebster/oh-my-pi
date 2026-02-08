@@ -118,6 +118,26 @@ After destroying, run the playbook to recreate with the new RAID level:
 ./play extra pinas --tags raid
 ```
 
+**Important:** After recreating the array, you must reformat the filesystem:
+```bash
+sudo mkfs.ext4 /dev/md0
+```
+The old ext4 superblock still references the previous array size (e.g. RAID0's ~1.86 TiB), which won't match the new array size (e.g. RAID1's ~931 GiB). Without reformatting, mount will fail with:
+```
+EXT4-fs (md0): bad geometry: block count XXXXX exceeds size of device (XXXXX blocks)
+```
+
+Then clean up the stale OMV mount entry (the UUID changed after reformat):
+```bash
+# Remove old mount from OMV database (use the old UUID)
+sudo omv-confdbadm delete "conf.system.filesystem.mountpoint" --filter '{"operator":"stringEquals","arg0":"fsname","arg1":"/dev/disk/by-uuid/OLD-UUID-HERE"}'
+
+# Refresh fstab
+sudo omv-salt deploy run fstab
+```
+
+Then mount the new filesystem through the OMV web UI (Storage → File Systems → md0 → Mount).
+
 If OMV still shows the old array entry and won't let you delete/mount via the UI:
 ```bash
 # Remove stale mount entry from OMV database
