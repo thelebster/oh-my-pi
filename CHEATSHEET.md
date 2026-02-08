@@ -143,6 +143,39 @@ docker restart pihole
 
 Admin UI: `http://mypi.local:8080/admin`
 
+## MediaMTX Camera Streaming (zeropi)
+
+[MediaMTX](https://github.com/bluenviron/mediamtx) streams the Camera Module 3 over RTSP, HLS, and WebRTC simultaneously.
+
+**Stream URLs:**
+
+| Protocol | URL | Use case |
+|----------|-----|----------|
+| RTSP | `rtsp://zeropi.local:8554/cam` | VLC, Home Assistant, NVR |
+| HLS | `http://zeropi.local:8888/cam` | Browser (wider compat) |
+| WebRTC | `http://zeropi.local:8889/cam` | Browser (lowest latency) |
+
+```bash
+# Service management
+systemctl status mediamtx
+systemctl restart mediamtx
+journalctl -u mediamtx -f          # follow logs
+
+# Test streams
+vlc rtsp://zeropi.local:8554/cam   # RTSP in VLC
+open http://zeropi.local:8889/cam  # WebRTC in browser
+
+# Monitor
+vcgencmd measure_temp              # CPU temperature
+```
+
+Deploy / check status:
+
+```bash
+./play extra zeropi-stream              # install & start
+./play extra zeropi-stream --tags status # check status
+```
+
 ## macOS Network
 
 ```bash

@@ -1,0 +1,11 @@
+[Unit]
+Description=MediaMTX camera streaming server
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/mediamtx /etc/mediamtx/mediamtx.yml
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

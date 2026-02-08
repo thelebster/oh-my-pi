@@ -1,0 +1,12 @@
+# MediaMTX config for Pi Zero 2 W camera streaming.
+# Only overrides that differ from defaults — see full reference:
+# https://github.com/bluenviron/mediamtx/blob/main/mediamtx.yml
+
+paths:
+  cam:
+    source: rpiCamera
+    # Tuned for Pi Zero 2 W (limited CPU/RAM)
+    rpiCameraWidth: 1280
+    rpiCameraHeight: 720
+    rpiCameraBitrate: 2000000
+    rpiCameraAfMode: continuous
