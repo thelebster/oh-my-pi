@@ -73,7 +73,7 @@ Finder will prompt for the username and password created above.
 | mmcblk0 | 14.9G | SD card | OS (boot + root) |
 | nvme0n1 | 931.5G | NVMe SSD | RAID1 member |
 | nvme1n1 | 931.5G | NVMe SSD | RAID1 member |
-| md0 | 1.82 TiB | RAID1 | NAS storage (ext4) |
+| md0 | 931.5G | RAID1 | NAS storage (ext4) |
 
 ## RAID Levels
 

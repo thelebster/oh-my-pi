@@ -3,7 +3,7 @@
 # https://github.com/bluenviron/mediamtx/blob/main/mediamtx.yml
 
 paths:
-  cam:
+  stream:
     source: rpiCamera
     # Tuned for Pi Zero 2 W (limited CPU/RAM)
     rpiCameraWidth: 1280

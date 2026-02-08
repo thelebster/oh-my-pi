@@ -1,0 +1,122 @@
+---
+- name: Setup Cloudflare Tunnel on Zero Pi
+  hosts: zeropi
+  become: true
+
+  tasks:
+    # === INSTALL ===
+    - name: Add cloudflared apt key
+      get_url:
+        url: https://pkg.cloudflare.com/cloudflare-main.gpg
+        dest: /usr/share/keyrings/cloudflare-main.gpg
+        mode: "0644"
+      when: lookup("env", "ZERO_PI_CF_TUNNEL_TOKEN") != ""
+      tags: install
+
+    - name: Add cloudflared apt repo
+      copy:
+        content: "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared bookworm main\n"
+        dest: /etc/apt/sources.list.d/cloudflared.list
+        mode: "0644"
+      register: cloudflared_repo
+      when: lookup("env", "ZERO_PI_CF_TUNNEL_TOKEN") != ""
+      tags: install
+
+    - name: Update apt cache for cloudflared
+      apt:
+        update_cache: true
+      when: cloudflared_repo.changed | default(false)
+      tags: install
+
+    - name: Install cloudflared
+      apt:
+        name: cloudflared
+        state: present
+      when: lookup("env", "ZERO_PI_CF_TUNNEL_TOKEN") != ""
+      tags: install
+
+    # === SERVICE ===
+    - name: Install cloudflared tunnel service
+      shell: cloudflared service install {{ lookup("env", "ZERO_PI_CF_TUNNEL_TOKEN") }}
+      args:
+        creates: /etc/systemd/system/cloudflared.service
+      when: lookup("env", "ZERO_PI_CF_TUNNEL_TOKEN") != ""
+      tags: tunnel
+
+    - name: Enable and start cloudflared
+      systemd:
+        name: cloudflared
+        enabled: true
+        state: started
+      when: lookup("env", "ZERO_PI_CF_TUNNEL_TOKEN") != ""
+      tags: tunnel
+
+    # === INGRESS ===
+    - name: Configure tunnel ingress and DNS
+      delegate_to: localhost
+      become: false
+      vars:
+        ansible_become: false
+      shell: bash {{ playbook_dir }}/../scripts/cloudflare-create-tunnel.sh
+      environment:
+        CF_TUNNEL_TOKEN: "{{ lookup('env', 'ZERO_PI_CF_TUNNEL_TOKEN') }}"
+        CF_TUNNEL_HTTP_HOST: "{{ lookup('env', 'ZERO_PI_CF_TUNNEL_HTTP_HOST') }}"
+        CF_TUNNEL_SSH_HOST: "{{ lookup('env', 'ZERO_PI_CF_TUNNEL_SSH_HOST') | default('', true) }}"
+      when: lookup("env", "ZERO_PI_CF_TUNNEL_TOKEN") != ""
+      changed_when: false
+      tags: tunnel
+
+    # === REMOVE (opt-in only) ===
+    - name: Remove tunnel ingress and DNS
+      delegate_to: localhost
+      become: false
+      vars:
+        ansible_become: false
+      shell: bash {{ playbook_dir }}/../scripts/cloudflare-remove-tunnel.sh
+      environment:
+        CF_TUNNEL_TOKEN: "{{ lookup('env', 'ZERO_PI_CF_TUNNEL_TOKEN') }}"
+        CF_TUNNEL_HTTP_HOST: "{{ lookup('env', 'ZERO_PI_CF_TUNNEL_HTTP_HOST') }}"
+        CF_TUNNEL_SSH_HOST: "{{ lookup('env', 'ZERO_PI_CF_TUNNEL_SSH_HOST') | default('', true) }}"
+      when: lookup("env", "ZERO_PI_CF_TUNNEL_TOKEN") != ""
+      tags: [never, tunnel-remove]
+
+    - name: Stop and disable cloudflared
+      systemd:
+        name: cloudflared
+        enabled: false
+        state: stopped
+      failed_when: false
+      tags: [never, tunnel-remove]
+
+    - name: Uninstall cloudflared service
+      shell: cloudflared service uninstall
+      failed_when: false
+      tags: [never, tunnel-remove]
+
+    # === VERIFY ===
+    - name: Get cloudflared status
+      command: systemctl is-active cloudflared
+      register: cloudflared_status
+      changed_when: false
+      failed_when: false
+      tags: [verify, status]
+
+    - name: Get cloudflared version
+      command: cloudflared --version
+      register: cloudflared_version
+      changed_when: false
+      failed_when: false
+      tags: [verify, status]
+
+    - name: Show summary
+      debug:
+        msg: |
+          ========== CLOUDFLARE TUNNEL (zeropi) ==========
+
+          SERVICE:  {{ cloudflared_status.stdout | default('unknown') }}
+          VERSION:  {{ cloudflared_version.stdout | default('unknown') }}
+
+          COMMANDS:
+            journalctl -u cloudflared -f       # follow logs
+            systemctl restart cloudflared      # restart
+      tags: [verify, status]

@@ -72,6 +72,43 @@
         enabled: true
       tags: service
 
+    # === NGINX CACHE ===
+    - name: Install nginx
+      apt:
+        name: nginx
+        state: present
+      tags: nginx
+
+    - name: Deploy nginx stream cache config
+      copy:
+        src: ../files/zeropi-stream-nginx.conf
+        dest: /etc/nginx/sites-available/stream.conf
+        mode: "0644"
+      notify: Reload nginx
+      tags: nginx
+
+    - name: Enable stream site
+      file:
+        src: /etc/nginx/sites-available/stream.conf
+        dest: /etc/nginx/sites-enabled/stream.conf
+        state: link
+      notify: Reload nginx
+      tags: nginx
+
+    - name: Remove default nginx site
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Reload nginx
+      tags: nginx
+
+    - name: Enable and start nginx
+      systemd:
+        name: nginx
+        enabled: true
+        state: started
+      tags: nginx
+
     # === FIREWALL ===
     - name: Check if UFW is active
       command: ufw status
@@ -93,6 +130,13 @@
       tags: firewall
 
     # === VERIFY ===
+    - name: Check nginx service status
+      command: systemctl is-active nginx
+      register: nginx_status
+      changed_when: false
+      failed_when: false
+      tags: [verify, status]
+
     - name: Check mediamtx service status
       command: systemctl is-active mediamtx
       register: service_status
@@ -112,17 +156,21 @@
         msg: |
           ========== MEDIAMTX STREAMING ==========
 
-          SERVICE: {{ service_status.stdout | default('unknown') }}
-          VERSION: {{ version_output.stdout | default('unknown') }}
+          MEDIAMTX: {{ service_status.stdout | default('unknown') }}
+          VERSION:  {{ version_output.stdout | default('unknown') }}
+          NGINX:    {{ nginx_status.stdout | default('unknown') }}
 
-          STREAM URLs:
-            RTSP:   rtsp://zeropi.local:8554/cam  (VLC, Home Assistant)
-            HLS:    http://zeropi.local:8888/cam   (browser, wider compat)
-            WebRTC: http://zeropi.local:8889/cam   (browser, low latency)
+          STREAM URLs (local):
+            RTSP:   rtsp://zeropi.local:8554/stream  (VLC, Home Assistant)
+            HLS:    http://zeropi.local:8888/stream   (direct, no cache)
+            WebRTC: http://zeropi.local:8889/stream   (browser, low latency)
+
+          CACHED (via nginx):
+            HLS:    http://zeropi.local/stream/       (cached, use for public)
 
           COMMANDS:
             journalctl -u mediamtx -f              # follow logs
-            systemctl restart mediamtx             # restart
+            journalctl -u nginx -f                 # nginx logs
       tags: [verify, status]
 
   handlers:
@@ -134,3 +182,8 @@
       systemd:
         name: mediamtx
         state: restarted
+
+    - name: Reload nginx
+      systemd:
+        name: nginx
+        state: reloaded

@@ -147,13 +147,14 @@ Admin UI: `http://mypi.local:8080/admin`
 
 [MediaMTX](https://github.com/bluenviron/mediamtx) streams the Camera Module 3 over RTSP, HLS, and WebRTC simultaneously.
 
-**Stream URLs:**
+**Stream URLs (local):**
 
 | Protocol | URL | Use case |
 |----------|-----|----------|
-| RTSP | `rtsp://zeropi.local:8554/cam` | VLC, Home Assistant, NVR |
-| HLS | `http://zeropi.local:8888/cam` | Browser (wider compat) |
-| WebRTC | `http://zeropi.local:8889/cam` | Browser (lowest latency) |
+| RTSP | `rtsp://zeropi.local:8554/stream` | VLC, Home Assistant, NVR |
+| HLS | `http://zeropi.local:8888/stream` | Direct (no cache) |
+| HLS (cached) | `http://zeropi.local/stream/` | Via nginx, use for public |
+| WebRTC | `http://zeropi.local:8889/stream` | Browser (lowest latency) |
 
 ```bash
 # Service management
@@ -162,8 +163,14 @@ systemctl restart mediamtx
 journalctl -u mediamtx -f          # follow logs
 
 # Test streams
-vlc rtsp://zeropi.local:8554/cam   # RTSP in VLC
-open http://zeropi.local:8889/cam  # WebRTC in browser
+vlc rtsp://zeropi.local:8554/stream   # RTSP in VLC
+open http://zeropi.local:8889/stream  # WebRTC in browser
+open http://zeropi.local/stream/      # HLS via nginx cache
+
+# Nginx cache
+nginx -t                           # test config
+systemctl reload nginx             # reload config
+journalctl -u nginx -f             # follow logs
 
 # Monitor
 vcgencmd measure_temp              # CPU temperature
@@ -172,9 +179,27 @@ vcgencmd measure_temp              # CPU temperature
 Deploy / check status:
 
 ```bash
-./play extra zeropi-stream              # install & start
+./play extra zeropi-stream              # install & start (MediaMTX + basic nginx)
 ./play extra zeropi-stream --tags status # check status
+./play extra zeropi-nginx               # nginx CDN cache + Cloudflare cache rule
+./play extra zeropi-nginx --tags status  # check nginx CDN status
 ```
+
+**Test caching (two layers):**
+
+```bash
+# Nginx cache — X-Cache-Status: MISS → HIT
+curl -sI http://zeropi.local/stream/index.m3u8 | grep -i x-cache
+
+# Cloudflare edge — cf-cache-status: MISS → HIT
+curl -sI https://picam.yourdomain.com/stream/index.m3u8 | grep -i cf-cache
+
+# Test a video segment (should be HIT at Cloudflare edge)
+SEG=$(curl -s https://picam.yourdomain.com/stream/video1_stream.m3u8 | grep '_seg.*\.mp4' | tail -1)
+curl -sI "https://picam.yourdomain.com/stream/$SEG" | grep -iE 'cf-cache|x-cache'
+```
+
+Cache headers: `.ts`/`.mp4` segments get `s-maxage=60` (CDN 60s), `.m3u8` playlists get `s-maxage=1`.
 
 ## macOS Network
 
@@ -188,12 +213,20 @@ sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder  # Flush DNS cac
 
 ## Cloudflare Tunnel
 
-On the Pi (managed by playbook):
+On the Pi (managed by playbook — mypi via main playbook, zeropi via extras):
 
 ```bash
 systemctl status cloudflared     # Tunnel service status
 journalctl -u cloudflared -f     # Follow tunnel logs
 cloudflared version              # Installed version
+```
+
+Deploy zeropi tunnel:
+
+```bash
+./play extra zeropi-tunnel              # install & start
+./play extra zeropi-tunnel --tags status # check status
+./play extra zeropi-tunnel --tags tunnel-remove  # remove everything
 ```
 
 On local machine — install `cloudflared` and add to `~/.ssh/config`:

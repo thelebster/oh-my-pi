@@ -1,0 +1,129 @@
+---
+- name: Setup Nginx HLS Cache with CDN Headers
+  hosts: zeropi
+  become: true
+
+  tasks:
+    # === INSTALL ===
+    - name: Install nginx
+      apt:
+        name: nginx
+        state: present
+      tags: install
+
+    # === CONFIGURE ===
+    - name: Deploy nginx CDN cache config
+      copy:
+        src: ../files/zeropi-stream-nginx-cdn.conf
+        dest: /etc/nginx/sites-available/stream.conf
+        mode: "0644"
+      notify: Reload nginx
+      tags: config
+
+    - name: Enable stream site
+      file:
+        src: /etc/nginx/sites-available/stream.conf
+        dest: /etc/nginx/sites-enabled/stream.conf
+        state: link
+      notify: Reload nginx
+      tags: config
+
+    - name: Remove default nginx site
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Reload nginx
+      tags: config
+
+    # === SERVICE ===
+    - name: Enable and start nginx
+      systemd:
+        name: nginx
+        enabled: true
+        state: started
+      tags: service
+
+    # === FIREWALL ===
+    - name: Check if UFW is active
+      command: ufw status
+      register: ufw_status
+      changed_when: false
+      tags: firewall
+
+    - name: Open HTTP port for nginx
+      ufw:
+        rule: allow
+        port: "80"
+        proto: tcp
+      when: "'Status: active' in ufw_status.stdout"
+      tags: firewall
+
+    # === CLOUDFLARE CACHE RULE ===
+    - name: Get zone name from Cloudflare
+      delegate_to: localhost
+      become: false
+      vars:
+        ansible_become: false
+      shell: >
+        curl -s -H "Authorization: Bearer {{ lookup('env', 'CF_API_TOKEN') }}"
+        "https://api.cloudflare.com/client/v4/zones/{{ lookup('env', 'CF_ZONE_ID') }}"
+        | jq -r '.result.name'
+      register: zone_name_result
+      changed_when: false
+      when: lookup("env", "CF_API_TOKEN") != "" and lookup("env", "ZERO_PI_CF_TUNNEL_HTTP_HOST") != ""
+      tags: cache-rule
+
+    - name: Create Cloudflare cache rule for HLS stream
+      delegate_to: localhost
+      become: false
+      vars:
+        ansible_become: false
+      shell: bash {{ playbook_dir }}/../scripts/cloudflare-cache-rule.sh
+      environment:
+        CF_CACHE_HOSTNAME: "{{ lookup('env', 'ZERO_PI_CF_TUNNEL_HTTP_HOST') }}.{{ zone_name_result.stdout }}"
+      when: lookup("env", "CF_API_TOKEN") != "" and lookup("env", "ZERO_PI_CF_TUNNEL_HTTP_HOST") != ""
+      changed_when: false
+      tags: cache-rule
+
+    # === VERIFY ===
+    - name: Check nginx service status
+      command: systemctl is-active nginx
+      register: nginx_status
+      changed_when: false
+      failed_when: false
+      tags: [verify, status]
+
+    - name: Test nginx config
+      command: nginx -t
+      register: nginx_test
+      changed_when: false
+      failed_when: false
+      tags: [verify, status]
+
+    - name: Show summary
+      debug:
+        msg: |
+          ========== NGINX HLS CACHE (CDN) ==========
+
+          SERVICE: {{ nginx_status.stdout | default('unknown') }}
+          CONFIG:  {{ 'ok' if nginx_test.rc == 0 else nginx_test.stderr | default('error') }}
+
+          CACHED STREAM:
+            http://zeropi.local/stream/       (local)
+            Via Cloudflare Tunnel          (public)
+
+          CACHE HEADERS:
+            .ts segments:  max-age=10, s-maxage=60  (CDN caches 60s)
+            .m3u8 playlist: max-age=1, s-maxage=1   (CDN caches 1s)
+
+          COMMANDS:
+            nginx -t                       # test config
+            systemctl reload nginx         # reload
+            journalctl -u nginx -f         # follow logs
+      tags: [verify, status]
+
+  handlers:
+    - name: Reload nginx
+      systemd:
+        name: nginx
+        state: reloaded
