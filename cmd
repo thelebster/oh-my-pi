@@ -3,7 +3,8 @@
 # Sources .env so secrets and config are available.
 #
 # Usage:
-#   ./cmd -m ping
+#   ./cmd -m ping                        # all hosts
+#   ./cmd -m ping --limit mypi           # single host
 #   ./cmd -m shell -a 'uptime'
 #   ./cmd -m shell -a 'ls -la /home/pi' -e ansible_become=false
 #   ./cmd -m apt -a 'name=htop state=present'
@@ -18,4 +19,4 @@ if [ -f .env ]; then
   set +a
 fi
 
-ansible mypi "$@"
+ansible all "$@"

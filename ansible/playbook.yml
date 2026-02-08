@@ -1,6 +1,9 @@
 ---
-- name: Setup Raspberry Pi 5
-  hosts: mypi
+# =============================================
+# COMMON SETUP (all Pis)
+# =============================================
+- name: Common Pi setup
+  hosts: all
   become: true
 
   tasks:
@@ -39,23 +42,9 @@
 
     - name: Set hostname
       hostname:
-        name: "{{ lookup('env', 'PI_HOSTNAME') | default('mypi', true) }}"
+        name: "{{ pi_hostname }}"
       notify: Reboot required
       tags: hostname
-
-    # === EEPROM FIRMWARE ===
-    - name: Check EEPROM update status
-      command: rpi-eeprom-update
-      register: eeprom_check
-      changed_when: false
-      failed_when: false
-      tags: eeprom
-
-    - name: Apply EEPROM update if available
-      command: rpi-eeprom-update -a
-      when: "'UPDATE AVAILABLE' in eeprom_check.stdout"
-      notify: Reboot required
-      tags: eeprom
 
     # === FIX LOCALE (macOS SSH compatibility) ===
     - name: Enable en_US.UTF-8 locale
@@ -80,6 +69,78 @@
         mode: "0644"
       tags: locale
 
+    # === SSH HARDENING ===
+    - name: Disable SSH password authentication
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PasswordAuthentication'
+        line: 'PasswordAuthentication no'
+      notify: Restart SSH
+      tags: ssh
+
+    - name: Disable SSH root login
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PermitRootLogin'
+        line: 'PermitRootLogin no'
+      notify: Restart SSH
+      tags: ssh
+
+    - name: Install fail2ban
+      apt:
+        name: fail2ban
+        state: present
+      tags: ssh
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: true
+      tags: ssh
+
+    - name: Configure fail2ban SSH jail
+      copy:
+        content: |
+          [sshd]
+          enabled = true
+          port = ssh
+          maxretry = 5
+          bantime = 3600
+          findtime = 600
+        dest: /etc/fail2ban/jail.d/ssh.conf
+        mode: "0644"
+      notify: Restart fail2ban
+      tags: ssh
+
+    - name: Enable fail2ban
+      systemd:
+        name: fail2ban
+        enabled: true
+        state: started
+      tags: ssh
+
+  handlers:
+    - name: Reboot required
+      debug:
+        msg: "Reboot required to apply changes"
+
+    - name: Restart SSH
+      systemd:
+        name: ssh
+        state: restarted
+
+    - name: Restart fail2ban
+      systemd:
+        name: fail2ban
+        state: restarted
+
+# =============================================
+# PI 5 SETUP (mypi only)
+# =============================================
+- name: Setup Raspberry Pi 5
+  hosts: mypi
+  become: true
+
+  tasks:
     # === DOCKER ===
     - name: Install Docker
       shell: curl -fsSL https://get.docker.com | sh
@@ -100,6 +161,20 @@
         enabled: true
         state: started
       tags: docker
+
+    # === EEPROM FIRMWARE ===
+    - name: Check EEPROM update status
+      command: rpi-eeprom-update
+      register: eeprom_check
+      changed_when: false
+      failed_when: false
+      tags: eeprom
+
+    - name: Apply EEPROM update if available
+      command: rpi-eeprom-update -a
+      when: "'UPDATE AVAILABLE' in eeprom_check.stdout"
+      notify: Reboot required
+      tags: eeprom
 
     # === NGINX ===
     - name: Install Nginx
@@ -327,55 +402,6 @@
       failed_when: false
       tags: [never, tunnel-remove]
 
-    # === SSH HARDENING ===
-    - name: Disable SSH password authentication
-      lineinfile:
-        path: /etc/ssh/sshd_config
-        regexp: '^#?PasswordAuthentication'
-        line: 'PasswordAuthentication no'
-      notify: Restart SSH
-      tags: ssh
-
-    - name: Disable SSH root login
-      lineinfile:
-        path: /etc/ssh/sshd_config
-        regexp: '^#?PermitRootLogin'
-        line: 'PermitRootLogin no'
-      notify: Restart SSH
-      tags: ssh
-
-    - name: Install fail2ban
-      apt:
-        name: fail2ban
-        state: present
-      tags: ssh
-
-    - name: Reload systemd daemon
-      systemd:
-        daemon_reload: true
-      tags: ssh
-
-    - name: Configure fail2ban SSH jail
-      copy:
-        content: |
-          [sshd]
-          enabled = true
-          port = ssh
-          maxretry = 5
-          bantime = 3600
-          findtime = 600
-        dest: /etc/fail2ban/jail.d/ssh.conf
-        mode: "0644"
-      notify: Restart fail2ban
-      tags: ssh
-
-    - name: Enable fail2ban
-      systemd:
-        name: fail2ban
-        enabled: true
-        state: started
-      tags: ssh
-
     # === GATHER INFO ===
     - name: Get Docker version
       command: docker --version
@@ -526,13 +552,3 @@
     - name: Reboot required
       debug:
         msg: "Reboot required to apply changes (EEPROM firmware or fan config)"
-
-    - name: Restart SSH
-      systemd:
-        name: ssh
-        state: restarted
-
-    - name: Restart fail2ban
-      systemd:
-        name: fail2ban
-        state: restarted

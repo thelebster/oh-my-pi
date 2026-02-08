@@ -1,8 +1,15 @@
 all:
+  vars:
+    ansible_become: true
+    ansible_become_method: sudo
   hosts:
     mypi:
       ansible_host: "{{ lookup('env', 'PI_HOST') | default('mypi.local', true) }}"
       ansible_user: "{{ lookup('env', 'PI_USER') | default('pi', true) }}"
       ansible_ssh_private_key_file: "{{ lookup('env', 'SSH_KEY') | default('~/.ssh/mypi', true) }}"
-      ansible_become: true
-      ansible_become_method: sudo
+      pi_hostname: "{{ lookup('env', 'PI_HOSTNAME') | default('mypi', true) }}"
+    zeropi:
+      ansible_host: "{{ lookup('env', 'ZERO_PI_HOST') | default('zeropi.local', true) }}"
+      ansible_user: "{{ lookup('env', 'ZERO_PI_USER') | default('pi', true) }}"
+      ansible_ssh_private_key_file: "{{ lookup('env', 'ZERO_PI_SSH_KEY') | default('~/.ssh/zeropi', true) }}"
+      pi_hostname: "{{ lookup('env', 'ZERO_PI_HOSTNAME') | default('zeropi', true) }}"

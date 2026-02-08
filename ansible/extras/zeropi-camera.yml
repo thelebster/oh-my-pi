@@ -1,0 +1,59 @@
+---
+- name: Setup Camera Module 3
+  hosts: zeropi
+  become: true
+
+  tasks:
+    # === CAMERA SOFTWARE ===
+    - name: Install rpicam tools
+      apt:
+        name: rpicam-apps     # rpicam-hello, rpicam-still, rpicam-vid (pulls libcamera as dependency)
+        state: present
+      tags: camera
+
+    - name: Ensure camera_auto_detect is enabled
+      lineinfile:
+        path: /boot/firmware/config.txt
+        regexp: '^#?camera_auto_detect'
+        line: 'camera_auto_detect=1'
+      notify: Reboot required
+      tags: camera
+
+    - name: Remove legacy camera settings if present
+      lineinfile:
+        path: /boot/firmware/config.txt
+        regexp: "{{ item }}"
+        state: absent
+      loop:
+        - '^start_x='
+        - '^gpu_mem='
+        - '^camera_led='
+      notify: Reboot required
+      tags: camera
+
+    # === VERIFY ===
+    - name: List detected cameras
+      command: rpicam-hello --list-cameras
+      register: camera_info
+      changed_when: false
+      failed_when: false
+      tags: [camera, status]
+
+    - name: Show summary
+      debug:
+        msg: |
+          ========== CAMERA ==========
+
+          DETECTED:
+          {{ camera_info.stdout | default('no cameras detected') | indent(2, first=true) }}
+
+          USAGE:
+            rpicam-hello -t 5000              # preview (5s)
+            rpicam-still -o photo.jpg         # photo
+            rpicam-vid -t 10000 -o video.h264 # video (10s)
+      tags: [camera, status]
+
+  handlers:
+    - name: Reboot required
+      debug:
+        msg: "Reboot required for camera config changes"
