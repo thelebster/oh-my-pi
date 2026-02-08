@@ -1,0 +1,106 @@
+---
+- name: Setup Pi NAS (OpenMediaVault + RAID0)
+  hosts: pinas
+  become: true
+
+  tasks:
+    # === RAID SOFTWARE ===
+    - name: Install mdadm for RAID management
+      apt:
+        name: mdadm
+        state: present
+      tags: raid
+
+    # === OPENMEDIAVAULT ===
+    - name: Install OpenMediaVault dependencies
+      apt:
+        name: [gnupg, wget]
+        state: present
+      tags: omv
+
+    - name: Install OpenMediaVault
+      shell: |
+        wget -qO - https://github.com/OpenMediaVault-Plugin-Developers/installScript/raw/master/install | bash
+      args:
+        creates: /usr/sbin/omv-firstaid
+      tags: omv
+
+    # === RAID0 ARRAY ===
+    - name: Check if RAID array already exists
+      command: mdadm --detail /dev/md0
+      register: raid_check
+      changed_when: false
+      failed_when: false
+      tags: raid
+
+    - name: Create RAID0 array from two NVMe SSDs
+      command: >
+        mdadm --create /dev/md0
+        --level=0
+        --raid-devices=2
+        /dev/nvme0n1 /dev/nvme1n1
+      when: raid_check.rc != 0
+      tags: raid
+
+    - name: Create ext4 filesystem on RAID array
+      filesystem:
+        fstype: ext4
+        dev: /dev/md0
+      tags: raid
+
+    - name: Create mount point
+      file:
+        path: /srv/nas
+        state: directory
+        mode: "0755"
+      tags: raid
+
+    - name: Mount RAID array
+      mount:
+        path: /srv/nas
+        src: /dev/md0
+        fstype: ext4
+        state: mounted
+      tags: raid
+
+    - name: Save mdadm config for boot persistence
+      shell: mdadm --detail --scan >> /etc/mdadm/mdadm.conf
+      args:
+        creates: /etc/mdadm/mdadm.conf.ansible
+      notify: Update initramfs
+      tags: raid
+
+    - name: Mark mdadm config as saved
+      file:
+        path: /etc/mdadm/mdadm.conf.ansible
+        state: touch
+      changed_when: false
+      tags: raid
+
+    # === CHECK SSDs ===
+    - name: List block devices
+      command: lsblk -o NAME,SIZE,TYPE,MOUNTPOINT,MODEL
+      register: lsblk_output
+      changed_when: false
+      tags: check
+
+    - name: Show block devices
+      debug:
+        msg: "{{ lsblk_output.stdout }}"
+      tags: check
+
+    - name: Check for expected SSDs
+      shell: lsblk -d -o NAME,TYPE | grep -c disk
+      register: disk_count
+      changed_when: false
+      failed_when: false
+      tags: check
+
+    - name: Verify two SSDs detected
+      debug:
+        msg: "{{ 'OK: ' + disk_count.stdout | trim + ' disks detected' if disk_count.stdout | trim | int >= 3 else 'WARNING: Expected at least 3 disks (SD card + 2 SSDs), found ' + disk_count.stdout | trim }}"
+      tags: check
+
+  handlers:
+    - name: Update initramfs
+      command: update-initramfs -u
