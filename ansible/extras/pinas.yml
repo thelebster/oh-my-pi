@@ -4,12 +4,92 @@
   become: true
 
   tasks:
+    # === REMOTE ACCESS ===
+    - name: Install rpi-connect
+      apt:
+        name: rpi-connect
+        state: present
+      tags: connect
+
     # === RAID SOFTWARE ===
     - name: Install mdadm for RAID management
       apt:
         name: mdadm
         state: present
       tags: raid
+
+    # === NETWORK PROTECTION ===
+    # OMV removes NetworkManager and replaces it with systemd-networkd + netplan.
+    # On Pi OS Bookworm, WiFi creds are in netplan files (90-NM-*.yaml), not in
+    # /etc/NetworkManager/system-connections/. OMV deletes files containing
+    # "NetworkManager" and *openmediavault* patterns. We extract WiFi creds from
+    # existing netplan, write wpa_supplicant.conf (for the OMV install script to
+    # parse), and create fallback netplan files with names OMV won't touch.
+
+    - name: Read WiFi SSID from netplan config
+      shell: grep -rh -A1 'access-points:' /etc/netplan/ 2>/dev/null | grep -v access-points | grep -v -- '--' | awk -F'"' '{print $2}' | head -1
+      register: wifi_ssid
+      changed_when: false
+      failed_when: false
+      tags: omv
+
+    - name: Read WiFi password from netplan config
+      shell: grep -rh 'password:' /etc/netplan/ 2>/dev/null | awk -F'"' '{print $2}' | head -1
+      register: wifi_psk
+      changed_when: false
+      failed_when: false
+      tags: omv
+
+    - name: Show detected WiFi network
+      debug:
+        msg: "WiFi: {{ wifi_ssid.stdout | default('not detected') }}"
+      tags: omv
+
+    - name: Write wpa_supplicant.conf for OMV install script
+      copy:
+        dest: /etc/wpa_supplicant/wpa_supplicant.conf
+        content: |
+          ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
+          update_config=1
+          network={
+            ssid="{{ wifi_ssid.stdout }}"
+            psk="{{ wifi_psk.stdout }}"
+          }
+        mode: "0600"
+      when: wifi_ssid.stdout | default('') | length > 0
+      tags: omv
+
+    - name: Create ethernet fallback netplan config
+      copy:
+        dest: /etc/netplan/99-ethernet-fallback.yaml
+        content: |
+          network:
+            version: 2
+            renderer: networkd
+            ethernets:
+              end0:
+                optional: true
+                dhcp4: true
+        mode: "0600"
+      tags: omv
+
+    - name: Create WiFi fallback netplan config
+      copy:
+        dest: /etc/netplan/99-wifi-fallback.yaml
+        content: |
+          network:
+            version: 2
+            renderer: networkd
+            wifis:
+              wlan0:
+                optional: true
+                dhcp4: true
+                access-points:
+                  "{{ wifi_ssid.stdout }}":
+                    password: "{{ wifi_psk.stdout }}"
+        mode: "0600"
+      when: wifi_ssid.stdout | default('') | length > 0
+      tags: omv
 
     # === OPENMEDIAVAULT ===
     - name: Install OpenMediaVault dependencies
@@ -18,11 +98,49 @@
         state: present
       tags: omv
 
-    - name: Install OpenMediaVault
+    - name: Install OpenMediaVault (skip reboot)
       shell: |
-        wget -qO - https://github.com/OpenMediaVault-Plugin-Developers/installScript/raw/master/install | bash
+        wget -qO /tmp/omv-install https://github.com/OpenMediaVault-Plugin-Developers/installScript/raw/master/install
+        chmod +x /tmp/omv-install
+        /tmp/omv-install -r
       args:
         creates: /usr/sbin/omv-firstaid
+      async: 2400
+      poll: 30
+      register: omv_install
+      tags: omv
+
+    - name: Unblock WiFi after OMV install
+      command: rfkill unblock all
+      changed_when: false
+      failed_when: false
+      tags: omv
+
+    # OMV install script registers eth0 in its database, but after it removes
+    # NetworkManager the interface becomes end0 (predictable name). Fix this.
+    - name: Fix ethernet interface name in OMV config (eth0 → end0)
+      replace:
+        path: /etc/openmediavault/config.xml
+        regexp: '<devicename>eth0</devicename>'
+        replace: '<devicename>end0</devicename>'
+      register: omv_iface_fix
+      tags: omv
+
+    - name: Deploy OMV network config after interface fix
+      command: omv-salt deploy run systemd-networkd
+      when: omv_iface_fix is changed
+      tags: omv
+
+    - name: Install OMV RAID management plugin
+      apt:
+        name: openmediavault-md
+        state: present
+      tags: omv
+
+    - name: Reboot after OMV install
+      reboot:
+        reboot_timeout: 300
+      when: omv_install is changed
       tags: omv
 
     # === RAID0 ARRAY ===
@@ -33,34 +151,23 @@
       failed_when: false
       tags: raid
 
-    - name: Create RAID0 array from two NVMe SSDs
-      command: >
-        mdadm --create /dev/md0
-        --level=0
-        --raid-devices=2
-        /dev/nvme0n1 /dev/nvme1n1
+    - name: Assemble existing RAID array from superblocks
+      command: mdadm --assemble /dev/md0 /dev/nvme0n1 /dev/nvme1n1
+      register: raid_assemble
+      changed_when: raid_assemble.rc == 0
+      failed_when: false
       when: raid_check.rc != 0
+      tags: raid
+
+    - name: Create new RAID0 array from two NVMe SSDs
+      shell: yes | mdadm --create /dev/md0 --level=0 --raid-devices=2 /dev/nvme0n1 /dev/nvme1n1
+      when: raid_check.rc != 0 and raid_assemble.rc != 0
       tags: raid
 
     - name: Create ext4 filesystem on RAID array
       filesystem:
         fstype: ext4
         dev: /dev/md0
-      tags: raid
-
-    - name: Create mount point
-      file:
-        path: /srv/nas
-        state: directory
-        mode: "0755"
-      tags: raid
-
-    - name: Mount RAID array
-      mount:
-        path: /srv/nas
-        src: /dev/md0
-        fstype: ext4
-        state: mounted
       tags: raid
 
     - name: Save mdadm config for boot persistence
