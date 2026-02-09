@@ -543,9 +543,13 @@
             Network server:           iperf3 -s
             Network client:           iperf3 -c <server-ip>
 
-          NEXT STEPS:
-            - Run 'rpi-connect signin' to enable remote access
-            - Visit connect.raspberrypi.com
+          NEXT STEPS (rpi-connect):
+            1. SSH in:   ssh -i ~/.ssh/mypi pi@mypi.local
+            2. Sign out: rpi-connect signout  (clears stale session if any)
+            3. Sign in:  rpi-connect signin
+            4. Open the URL shown in your browser to link the device
+            5. Verify:   rpi-connect status
+            6. Visit:    https://connect.raspberrypi.com/devices
       tags: status
 
   handlers:

@@ -18,15 +18,8 @@ RULE_DESC="Cache HLS stream: ${CF_CACHE_HOSTNAME}"
 EXISTING=$(curl -s -H "Authorization: Bearer ${CF_API_TOKEN}" "$CF_API")
 
 if echo "$EXISTING" | jq -e '.success' > /dev/null 2>&1; then
-  # Check if our rule already exists
-  EXISTING_RULE=$(echo "$EXISTING" | jq --arg desc "$RULE_DESC" '.result.rules // [] | map(select(.description == $desc)) | first // empty')
-  if [[ -n "$EXISTING_RULE" ]]; then
-    echo "Cache rule already exists for ${CF_CACHE_HOSTNAME}"
-    exit 0
-  fi
-
-  # Append our rule to existing rules
-  EXISTING_RULES=$(echo "$EXISTING" | jq '.result.rules // []')
+  # Remove existing rule with same description (if any) so we can recreate it
+  EXISTING_RULES=$(echo "$EXISTING" | jq --arg desc "$RULE_DESC" '.result.rules // [] | map(select(.description != $desc))')
 else
   EXISTING_RULES="[]"
 fi
@@ -38,6 +31,10 @@ NEW_RULE=$(jq -n --arg hostname "$CF_CACHE_HOSTNAME" --arg desc "$RULE_DESC" '{
     cache: true,
     edge_ttl: {
       mode: "respect_origin"
+    },
+    browser_ttl: {
+      mode: "override_origin",
+      default: 10
     }
   },
   description: $desc

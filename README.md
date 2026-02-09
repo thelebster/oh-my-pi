@@ -39,6 +39,21 @@ make claude     Run Claude on Pi (JSON output + session ID).
 make claude-resume  Resume Claude session (SESSION=<id>).
 ```
 
+## Raspberry Pi Connect
+
+Remote access via [connect.raspberrypi.com](https://connect.raspberrypi.com). Installed automatically by the main playbook (`connect` tag).
+
+After the playbook runs, SSH in to complete the sign-in:
+
+```bash
+ssh -i ~/.ssh/mypi pi@mypi.local
+rpi-connect signout              # clear stale session if any
+rpi-connect signin               # outputs a URL — open in browser to link
+rpi-connect status               # verify
+```
+
+Then visit https://connect.raspberrypi.com/devices to manage the device.
+
 ## Optional: Cloudflare Tunnel
 
 Exposes services (SSH, HTTP, etc.) through Cloudflare without port forwarding. The Pi opens an outbound connection to Cloudflare's edge — no inbound ports needed.

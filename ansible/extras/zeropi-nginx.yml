@@ -114,7 +114,7 @@
 
           CACHE HEADERS:
             .ts segments:  max-age=10, s-maxage=60  (CDN caches 60s)
-            .m3u8 playlist: max-age=1, s-maxage=1   (CDN caches 1s)
+            .m3u8 playlist: no-store                 (never cached)
 
           COMMANDS:
             nginx -t                       # test config
