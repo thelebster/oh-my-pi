@@ -118,12 +118,8 @@
         state: started
       tags: ssh
 
-    # === RASPBERRY PI CONNECT ===
-    - name: Install rpi-connect
-      apt:
-        name: rpi-connect
-        state: present
-      tags: connect
+    # rpi-connect moved to extras: connect-desktop (rpi-connect) and connect-headless (rpi-connect-lite)
+    # Desktop vs lite matters — full rpi-connect fails on headless Pi OS Lite (no Wayland)
 
   handlers:
     - name: Reboot required

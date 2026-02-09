@@ -1,0 +1,15 @@
+---
+- name: Install Raspberry Pi Connect (headless)
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Remove rpi-connect if installed
+      apt:
+        name: rpi-connect
+        state: absent
+
+    - name: Install rpi-connect-lite
+      apt:
+        name: rpi-connect-lite
+        state: present
