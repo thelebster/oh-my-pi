@@ -1,0 +1,110 @@
+---
+- name: Deploy Jellyfin media server
+  hosts: pinas
+  become: true
+
+  tasks:
+    # === DOCKER ===
+    - name: Install Docker
+      shell: curl -fsSL https://get.docker.com | sh
+      args:
+        creates: /usr/bin/docker
+      tags: docker
+
+    - name: Add user to docker group
+      user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: true
+      tags: docker
+
+    - name: Start Docker
+      systemd:
+        name: docker
+        enabled: true
+        state: started
+      tags: docker
+
+    # === JELLYFIN ===
+    - name: Get RAID array UUID
+      command: blkid -s UUID -o value /dev/md0
+      register: md0_uuid
+      changed_when: false
+
+    - name: Set paths from RAID UUID
+      set_fact:
+        jellyfin_raid_root: "/srv/dev-disk-by-uuid-{{ md0_uuid.stdout }}"
+        jellyfin_data_path: "/srv/dev-disk-by-uuid-{{ md0_uuid.stdout }}/jellyfin"
+        jellyfin_media_path: "/srv/dev-disk-by-uuid-{{ md0_uuid.stdout }}/media"
+
+    - name: Create Jellyfin directory
+      file:
+        path: /opt/jellyfin
+        state: directory
+        mode: "0755"
+
+    - name: Copy docker-compose file
+      copy:
+        src: ../../jellyfin/docker-compose.yml
+        dest: /opt/jellyfin/docker-compose.yml
+      register: compose_file
+
+    - name: Deploy Jellyfin env file
+      copy:
+        content: |
+          JELLYFIN_TZ={{ lookup('env', 'JELLYFIN_TZ') | default('UTC', true) }}
+          JELLYFIN_DATA_PATH={{ jellyfin_data_path }}
+          JELLYFIN_MEDIA_PATH={{ jellyfin_media_path }}
+        dest: /opt/jellyfin/.env
+        mode: "0600"
+      register: env_file
+
+    - name: Create Jellyfin data directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ jellyfin_data_path }}/config"
+        - "{{ jellyfin_data_path }}/cache"
+
+    - name: Create media directory
+      file:
+        path: "{{ jellyfin_media_path }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: users
+        mode: "0775"
+
+    - name: Start Jellyfin with docker compose
+      community.docker.docker_compose_v2:
+        project_src: /opt/jellyfin
+        state: present
+        pull: missing
+      register: jellyfin_result
+
+    - name: Restart Jellyfin if config changed
+      community.docker.docker_compose_v2:
+        project_src: /opt/jellyfin
+        state: restarted
+      when: (compose_file.changed or env_file.changed) and not jellyfin_result.changed
+
+    - name: Check if UFW is active
+      command: ufw status
+      register: ufw_status
+      changed_when: false
+
+    - name: Allow Jellyfin (port 8096) through UFW
+      ufw:
+        rule: allow
+        port: "8096"
+      when: "'Status: active' in ufw_status.stdout"
+
+    - name: Show Jellyfin status
+      debug:
+        msg: |
+          Jellyfin is running!
+          Web UI: http://{{ ansible_facts['default_ipv4']['address'] }}:8096
+          Media path: {{ jellyfin_media_path }}
+          Complete the initial setup wizard in the browser.
+          Add media libraries pointing to /media inside the container.

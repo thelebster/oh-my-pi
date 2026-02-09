@@ -1,0 +1,16 @@
+services:
+  jellyfin:
+    container_name: jellyfin
+    hostname: jellyfin
+    image: jellyfin/jellyfin:latest
+    restart: unless-stopped
+    ports:
+      - "8096:8096/tcp"
+      - "7359:7359/udp"
+      - "1900:1900/udp"
+    environment:
+      TZ: ${JELLYFIN_TZ:-UTC}
+    volumes:
+      - ${JELLYFIN_DATA_PATH:-/srv/jellyfin}/config:/config
+      - ${JELLYFIN_DATA_PATH:-/srv/jellyfin}/cache:/cache
+      - ${JELLYFIN_MEDIA_PATH:-/srv/media}:/media

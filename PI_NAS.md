@@ -293,6 +293,106 @@ sudo chmod 600 /etc/netplan/99-wifi-fallback.yaml
 sudo netplan apply
 ```
 
+## Jellyfin Media Server
+
+Jellyfin runs via Docker on pinas, with all data stored on the RAID array (not the SD card).
+
+### Deploy
+
+```bash
+./play extra jellyfin
+```
+
+What it does:
+1. Installs Docker (if not present)
+2. Auto-detects RAID UUID via `blkid /dev/md0`
+3. Creates data directories on RAID: `.../jellyfin/config`, `.../jellyfin/cache`
+4. Creates media directory on RAID: `.../media` (owned by `pi:users`, mode 0775)
+5. Starts Jellyfin container (ports: 8096 TCP, 7359 UDP, 1900 UDP)
+6. Opens port 8096 in UFW
+
+Web UI: `http://pinas.local:8096`
+
+### Post-Deploy
+
+1. Complete the setup wizard in the browser
+2. Add media libraries pointing to `/media` inside the container
+3. Upload media to the SMB `media` share or via SSH to the RAID media directory
+
+### Storage Layout
+
+| Container path | Host path | Purpose |
+|---------------|-----------|---------|
+| `/config` | `.../jellyfin/config` | Database, metadata, logs |
+| `/cache` | `.../jellyfin/cache` | Image cache, transcodes |
+| `/media` | `.../media` | Media files (shared via SMB) |
+
+All paths are on the RAID array, not the SD card.
+
+### Jellyfin API
+
+The API requires an API key: Dashboard → API Keys → Add.
+
+**List all movies:**
+```bash
+curl -s 'http://pinas.local:8096/Items?Recursive=true&IncludeItemTypes=Movie&Fields=Path' \
+  -H 'Authorization: MediaBrowser Token=YOUR_API_KEY'
+```
+
+**Update a movie title:**
+
+The update endpoint requires array fields to be present (not null), otherwise it returns 400 with `ArgumentNullException`. Minimal working payload:
+```bash
+curl -s -X POST 'http://pinas.local:8096/Items/{ITEM_ID}' \
+  -H 'Authorization: MediaBrowser Token=YOUR_API_KEY' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "Id": "{ITEM_ID}",
+    "Name": "New Title",
+    "LockData": true,
+    "Type": "Movie",
+    "IsFolder": false,
+    "Genres": [],
+    "Tags": [],
+    "Studios": [],
+    "People": [],
+    "GenreItems": [],
+    "TagItems": [],
+    "ProviderIds": {},
+    "RemoteTrailers": [],
+    "LockedFields": []
+  }'
+```
+
+Returns 204 on success. `LockData: true` prevents metadata providers from overwriting the title.
+
+**List users:**
+```bash
+curl -s 'http://pinas.local:8096/Users' \
+  -H 'Authorization: MediaBrowser Token=YOUR_API_KEY'
+```
+
+**Trigger library scan:**
+```bash
+curl -s -X POST 'http://pinas.local:8096/Library/Refresh' \
+  -H 'Authorization: MediaBrowser Token=YOUR_API_KEY'
+```
+
+### Hardware Transcoding
+
+The Pi 5's VideoCore VII has hardware decode for H.265 only (up to 4Kp60). H.264 decode and all encoding is software-only ([source](https://forums.raspberrypi.com/viewtopic.php?t=376952), [source](https://forums.raspberrypi.com/viewtopic.php?t=378329)). Transcoding is CPU-bound and slow. For best results:
+- Use direct play — no transcoding needed if the client supports the source format
+- H.264 MP4 is the safest format (supported by virtually all clients)
+- Disable or minimize transcoding in Jellyfin settings
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JELLYFIN_TZ` | `UTC` | Timezone |
+
+Media and data paths are auto-detected from the RAID UUID.
+
 ## Tags
 
 ```bash
