@@ -35,6 +35,28 @@
       notify: Reload nginx
       tags: config
 
+    # === PLAYER ===
+    - name: Create player directory
+      file:
+        path: /var/www/stream
+        state: directory
+        mode: "0755"
+      tags: player
+
+    - name: Deploy stream player page
+      copy:
+        src: ../files/zeropi-stream-player.html
+        dest: /var/www/stream/index.html
+        mode: "0644"
+      tags: player
+
+    - name: Deploy hls.js library
+      copy:
+        src: ../files/hls.min.js
+        dest: /var/www/stream/hls.min.js
+        mode: "0644"
+      tags: player
+
     # === SERVICE ===
     - name: Enable and start nginx
       systemd:

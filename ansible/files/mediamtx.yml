@@ -2,6 +2,10 @@
 # Only overrides that differ from defaults — see full reference:
 # https://github.com/bluenviron/mediamtx/blob/main/mediamtx.yml
 
+# Default lowLatency (LL-HLS) has known issues on iPhone Safari
+# (freezing, long delays, 1.5x playback speed). mpegts is most compatible.
+hlsVariant: mpegts
+
 paths:
   stream:
     source: rpiCamera
