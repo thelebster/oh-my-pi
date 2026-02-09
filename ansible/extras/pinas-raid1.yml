@@ -1,0 +1,89 @@
+---
+- name: Setup PiNAS RAID1 Array
+  hosts: pinas
+  become: true
+
+  tasks:
+    # === CHECK SSDs ===
+    - name: List block devices
+      command: lsblk -o NAME,SIZE,TYPE,MOUNTPOINT,MODEL
+      register: lsblk_output
+      changed_when: false
+      tags: [check, status]
+
+    - name: Show block devices
+      debug:
+        msg: "{{ lsblk_output.stdout }}"
+      tags: [check, status]
+
+    - name: Check for expected SSDs
+      shell: lsblk -d -o NAME,TYPE | grep -c disk
+      register: disk_count
+      changed_when: false
+      failed_when: false
+      tags: [check, status]
+
+    - name: Verify two SSDs detected
+      debug:
+        msg: "{{ 'OK: ' + disk_count.stdout | trim + ' disks detected' if disk_count.stdout | trim | int >= 3 else 'WARNING: Expected at least 3 disks (SD card + 2 SSDs), found ' + disk_count.stdout | trim }}"
+      tags: [check, status]
+
+    # === RAID SOFTWARE ===
+    - name: Install mdadm for RAID management
+      apt:
+        name: mdadm
+        state: present
+      tags: raid
+
+    # === RAID1 ARRAY ===
+    - name: Check if RAID array already exists
+      command: mdadm --detail /dev/md0
+      register: raid_check
+      changed_when: false
+      failed_when: false
+      tags: raid
+
+    - name: Assemble existing RAID array from superblocks
+      command: mdadm --assemble /dev/md0 /dev/nvme0n1 /dev/nvme1n1
+      register: raid_assemble
+      changed_when: raid_assemble.rc == 0
+      failed_when: false
+      when: raid_check.rc != 0
+      tags: raid
+
+    - name: Create new RAID1 array from two NVMe SSDs
+      shell: yes | mdadm --create /dev/md0 --level=1 --raid-devices=2 /dev/nvme0n1 /dev/nvme1n1
+      when: raid_check.rc != 0 and raid_assemble.rc != 0
+      tags: raid
+
+    - name: Create ext4 filesystem on RAID array
+      filesystem:
+        fstype: ext4
+        dev: /dev/md0
+      tags: raid
+
+    - name: Read current mdadm array scan output
+      command: mdadm --detail --scan
+      register: mdadm_scan
+      changed_when: false
+      tags: raid
+
+    - name: Remove conflicting /dev/md/0 entry from mdadm config
+      lineinfile:
+        path: /etc/mdadm/mdadm.conf
+        regexp: "^ARRAY /dev/md/0 "
+        state: absent
+      tags: raid
+
+    - name: Save mdadm config for boot persistence
+      lineinfile:
+        path: /etc/mdadm/mdadm.conf
+        line: "{{ mdadm_scan.stdout }}"
+        regexp: "^ARRAY /dev/md0 "
+        state: present
+      notify: Update initramfs
+      tags: raid
+
+  handlers:
+    - name: Update initramfs
+      command: update-initramfs -u

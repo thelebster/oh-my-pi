@@ -1,0 +1,242 @@
+---
+- name: Migrate PiNAS to systemd-networkd (before OMV)
+  hosts: pinas
+  become: true
+
+  tasks:
+    # === PRE-FLIGHT CHECKS ===
+    - name: Check if NetworkManager is installed
+      shell: dpkg -l network-manager 2>/dev/null | grep -q '^ii'
+      register: nm_installed
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      tags: [check, networkd]
+
+    - name: Check if systemd-networkd is already active
+      command: systemctl is-active systemd-networkd
+      register: networkd_status
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      tags: [check, networkd]
+
+    - name: Show migration status
+      debug:
+        msg: >-
+          NetworkManager: {{ 'installed' if nm_installed.rc == 0 else 'not installed' }},
+          systemd-networkd: {{ networkd_status.stdout | default('unknown') }}
+      tags: [check, networkd]
+
+    - name: Skip if already migrated (networkd active, NM removed)
+      meta: end_play
+      when: networkd_status.stdout == 'active' and nm_installed.rc != 0
+      tags: [check, networkd]
+
+    # === READ WIFI CREDENTIALS ===
+    - name: Read WiFi SSID from netplan config
+      shell: grep -rh -A1 'access-points:' /etc/netplan/ 2>/dev/null | grep -v access-points | grep -v -- '--' | awk -F'"' '{print $2}' | head -1
+      register: wifi_ssid
+      changed_when: false
+      failed_when: false
+      tags: networkd
+
+    - name: Read WiFi password from netplan config
+      shell: grep -rh 'password:' /etc/netplan/ 2>/dev/null | awk -F'"' '{print $2}' | head -1
+      register: wifi_psk
+      changed_when: false
+      failed_when: false
+      tags: networkd
+
+    - name: Show detected WiFi network
+      debug:
+        msg: "WiFi: {{ wifi_ssid.stdout | default('not detected') }}"
+      tags: networkd
+
+    # === WRITE NETWORKD CONFIGS ===
+    - name: Write wpa_supplicant.conf for WiFi
+      copy:
+        dest: /etc/wpa_supplicant/wpa_supplicant.conf
+        content: |
+          ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
+          update_config=1
+          network={
+            ssid="{{ wifi_ssid.stdout }}"
+            psk="{{ wifi_psk.stdout }}"
+          }
+        mode: "0600"
+      when: wifi_ssid.stdout | default('') | length > 0
+      tags: networkd
+
+    - name: Create ethernet fallback netplan config
+      copy:
+        dest: /etc/netplan/99-ethernet-fallback.yaml
+        content: |
+          network:
+            version: 2
+            renderer: networkd
+            ethernets:
+              end0:
+                optional: true
+                dhcp4: true
+        mode: "0600"
+      tags: networkd
+
+    - name: Create WiFi fallback netplan config
+      copy:
+        dest: /etc/netplan/99-wifi-fallback.yaml
+        content: |
+          network:
+            version: 2
+            renderer: networkd
+            wifis:
+              wlan0:
+                optional: true
+                dhcp4: true
+                access-points:
+                  "{{ wifi_ssid.stdout }}":
+                    password: "{{ wifi_psk.stdout }}"
+        mode: "0600"
+      when: wifi_ssid.stdout | default('') | length > 0
+      tags: networkd
+
+    # === SWITCH TO NETWORKD ===
+    - name: Enable systemd-networkd
+      systemd:
+        name: systemd-networkd
+        enabled: true
+        state: started
+      tags: networkd
+
+    - name: Enable wpa_supplicant service
+      systemd:
+        name: wpa_supplicant
+        enabled: true
+        state: started
+      when: wifi_ssid.stdout | default('') | length > 0
+      tags: networkd
+
+    - name: Apply netplan config (async — SSH may drop)
+      command: netplan apply
+      async: 60
+      poll: 0
+      tags: networkd
+
+    - name: Wait for connection to recover
+      wait_for_connection:
+        delay: 5
+        timeout: 120
+      tags: networkd
+
+    - name: Verify connectivity
+      command: ping -c 2 -W 5 1.1.1.1
+      register: ping_check
+      changed_when: false
+      failed_when: false
+      tags: networkd
+
+    - name: ABORT if no connectivity after switch
+      fail:
+        msg: >-
+          No connectivity after switching to networkd.
+          Old NM configs are still in place — SSH in manually to recover.
+          Try: sudo netplan apply, or restart NetworkManager.
+      when: ping_check.rc != 0
+      tags: networkd
+
+    # === CLEANUP ===
+    - name: Find old NetworkManager netplan files
+      shell: ls /etc/netplan/90-NM-*.yaml 2>/dev/null || true
+      register: nm_netplan_files
+      changed_when: false
+      tags: cleanup
+
+    - name: Remove old NetworkManager netplan files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop: "{{ nm_netplan_files.stdout_lines }}"
+      when: nm_netplan_files.stdout | length > 0
+      tags: cleanup
+
+    - name: Stop NetworkManager
+      systemd:
+        name: NetworkManager
+        state: stopped
+        enabled: false
+      failed_when: false
+      tags: cleanup
+
+    - name: Purge NetworkManager
+      apt:
+        name: network-manager
+        state: absent
+        purge: true
+      tags: cleanup
+
+    - name: Apply netplan after cleanup (async — SSH may drop)
+      command: netplan apply
+      async: 60
+      poll: 0
+      tags: cleanup
+
+    - name: Wait for connection after cleanup
+      wait_for_connection:
+        delay: 5
+        timeout: 120
+      tags: cleanup
+
+    # === VERIFY ===
+    - name: Check systemd-networkd status
+      command: systemctl is-active systemd-networkd
+      register: verify_networkd
+      changed_when: false
+      tags: [verify, status]
+
+    - name: Check NetworkManager is removed
+      shell: dpkg -l network-manager 2>/dev/null | grep -q '^ii'
+      register: verify_nm
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      tags: [verify, status]
+
+    - name: Get IP addresses
+      command: ip -br addr
+      register: verify_ip
+      changed_when: false
+      tags: [verify, status]
+
+    - name: Test connectivity
+      command: ping -c 2 -W 5 1.1.1.1
+      register: verify_ping
+      changed_when: false
+      failed_when: false
+      tags: [verify, status]
+
+    - name: Test DNS resolution
+      command: dig +short google.com
+      register: verify_dns
+      changed_when: false
+      failed_when: false
+      tags: [verify, status]
+
+    - name: List netplan files
+      command: ls -la /etc/netplan/
+      register: verify_netplan
+      changed_when: false
+      tags: [verify, status]
+
+    - name: Migration summary
+      debug:
+        msg: |
+          === systemd-networkd Migration Summary ===
+          networkd: {{ verify_networkd.stdout }}
+          NetworkManager: {{ 'REMOVED' if verify_nm.rc != 0 else 'STILL INSTALLED' }}
+          Connectivity: {{ 'OK' if verify_ping.rc == 0 else 'FAILED' }}
+          DNS: {{ verify_dns.stdout | default('FAILED') }}
+          IPs:
+          {{ verify_ip.stdout }}
+          Netplan files:
+          {{ verify_netplan.stdout }}
+      tags: [verify, status]
