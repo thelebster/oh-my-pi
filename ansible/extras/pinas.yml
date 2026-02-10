@@ -135,9 +135,12 @@
       when: omv_iface_fix is changed
       tags: omv
 
-    - name: Install OMV RAID management plugin
+    - name: Install OMV plugins
       apt:
-        name: openmediavault-md
+        name:
+          - openmediavault-md
+          - openmediavault-cputemp
+          - openmediavault-diskstats
         state: present
       tags: omv
 

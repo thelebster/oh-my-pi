@@ -1,6 +1,6 @@
 # PiNAS - Raspberry Pi NAS
 
-Raspberry Pi NAS with OpenMediaVault and RAID1 storage.
+Raspberry Pi NAS with [OpenMediaVault](https://www.openmediavault.org/) and RAID1 storage.
 
 ## Current Setup
 
