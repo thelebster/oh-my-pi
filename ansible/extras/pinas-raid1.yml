@@ -84,6 +84,20 @@
       notify: Update initramfs
       tags: raid
 
+    # === SYMLINK ===
+    - name: Get RAID array UUID
+      command: blkid -s UUID -o value /dev/md0
+      register: md0_uuid
+      changed_when: false
+      tags: [raid, symlink]
+
+    - name: Create /srv/nas symlink to RAID mount
+      file:
+        src: "/srv/dev-disk-by-uuid-{{ md0_uuid.stdout }}"
+        dest: /srv/nas
+        state: link
+      tags: [raid, symlink]
+
   handlers:
     - name: Update initramfs
       command: update-initramfs -u

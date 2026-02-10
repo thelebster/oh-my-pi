@@ -267,6 +267,24 @@ sudo omv-salt deploy run nginx
 - Rescan: `sudo omv-mkconf mdadm && sudo monit restart omv-engined`
 - Refresh the web UI
 
+**RAID degraded / NVMe drive faulty:**
+
+Check array status:
+```bash
+cat /proc/mdstat           # [UU] = healthy, [_U] or [U_] = degraded
+sudo mdadm --detail /dev/md0
+```
+
+If a drive shows `faulty` or SMART gives I/O errors (`smartctl -i /dev/nvmeXn1`):
+1. Power off, reseat the NVMe drive, boot
+2. Check if it recovered: `cat /proc/mdstat` — if `[UU]`, you're good
+3. If still degraded, re-add the drive:
+   ```bash
+   sudo mdadm /dev/md0 --fail /dev/nvmeXn1 --remove /dev/nvmeXn1 --add /dev/nvmeXn1
+   ```
+4. Monitor rebuild: `watch cat /proc/mdstat`
+5. If SMART still gives I/O errors after reseat — RMA the drive
+
 **WiFi lost after install:**
 ```bash
 # If you can SSH via ethernet:

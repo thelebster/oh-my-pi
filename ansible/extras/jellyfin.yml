@@ -36,6 +36,10 @@
         jellyfin_raid_root: "/srv/dev-disk-by-uuid-{{ md0_uuid.stdout }}"
         jellyfin_data_path: "/srv/dev-disk-by-uuid-{{ md0_uuid.stdout }}/jellyfin"
         jellyfin_media_path: "/srv/dev-disk-by-uuid-{{ md0_uuid.stdout }}/media"
+        # TODO: switch to /srv/nas symlink (requires pinas-raid1 --tags symlink)
+        # jellyfin_raid_root: /srv/nas
+        # jellyfin_data_path: /srv/nas/jellyfin
+        # jellyfin_media_path: /srv/nas/media
 
     - name: Create Jellyfin directory
       file:

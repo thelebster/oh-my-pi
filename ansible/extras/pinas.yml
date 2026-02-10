@@ -144,6 +144,12 @@
         state: present
       tags: omv
 
+    - name: Install omv-extras repo
+      shell: wget -qO- https://github.com/OpenMediaVault-Plugin-Developers/packages/raw/master/install | bash
+      args:
+        creates: /usr/share/openmediavault/mkconf/omvextras
+      tags: [omv, omv-extras]
+
     - name: Reboot after OMV install
       reboot:
         reboot_timeout: 300

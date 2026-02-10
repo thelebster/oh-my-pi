@@ -1,0 +1,33 @@
+---
+# Install CLI tools on Pis
+#
+# Usage:
+#   ./play extra tools                  # all hosts
+#   ./play extra tools --limit mypi     # single host
+#   ./play extra tools --check          # dry run
+#
+# aria2c (downloads and exits, no seeding):
+#   aria2c --seed-time=0 -d /srv/nas/media/Movies 'magnet:?xt=...'
+#
+# transmission-cli (keeps seeding after download):
+#   transmission-cli -w /srv/nas/media/Movies 'magnet:?xt=...'
+#   transmission-show file.torrent
+#
+- name: Install CLI tools
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Install torrent clients
+      apt:
+        name:
+          - transmission-cli
+          - aria2
+        state: present
+
+    - name: Create transmission config directory
+      file:
+        path: "/home/{{ ansible_user }}/.config/transmission/resume"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
