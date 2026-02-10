@@ -108,3 +108,4 @@
           Media path: {{ jellyfin_media_path }}
           Complete the initial setup wizard in the browser.
           Add media libraries pointing to /media inside the container.
+          Enable V4L2 hardware acceleration: Dashboard → Playback → Transcoding → Hardware acceleration → Video4Linux2 (V4L2)

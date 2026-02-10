@@ -378,12 +378,69 @@ curl -s -X POST 'http://pinas.local:8096/Library/Refresh' \
   -H 'Authorization: MediaBrowser Token=YOUR_API_KEY'
 ```
 
-### Hardware Transcoding
+### Hardware Transcoding (V4L2)
 
-The Pi 5's VideoCore VII has hardware decode for H.265 only (up to 4Kp60). H.264 decode and all encoding is software-only ([source](https://forums.raspberrypi.com/viewtopic.php?t=376952), [source](https://forums.raspberrypi.com/viewtopic.php?t=378329)). Transcoding is CPU-bound and slow. For best results:
-- Use direct play — no transcoding needed if the client supports the source format
-- H.264 MP4 is the safest format (supported by virtually all clients)
-- Disable or minimize transcoding in Jellyfin settings
+The Pi 5's VideoCore VII GPU has limited hardware video support:
+
+| | H.264 | H.265/HEVC |
+|---|---|---|
+| **Hardware decode** | No | Yes (up to 4Kp60) |
+| **Hardware encode** | No | No |
+
+H.264 decode and all encoding is software-only ([source](https://forums.raspberrypi.com/viewtopic.php?t=376952), [source](https://forums.raspberrypi.com/viewtopic.php?t=378329)).
+
+The Jellyfin container has V4L2 device passthrough for the HEVC decoder:
+```yaml
+devices:
+  - /dev/video19:/dev/video19 # V4L2 HEVC decoder (rpi-hevc-dec)
+```
+
+**Enable in Jellyfin:** Dashboard → Playback → Transcoding → Hardware acceleration → **Video4Linux2 (V4L2)** → check HEVC.
+
+**What this means in practice:**
+- HEVC content: GPU handles decoding, CPU only does encoding — lower CPU usage
+- H.264 content: fully software transcoded — expect 80-85% CPU at 1080p
+- Direct play: no transcoding at all — 0% CPU (best option)
+
+**Tips to reduce CPU load:**
+- Use **direct play** whenever possible — no transcoding needed if the client supports the source format
+- H.264 in MP4 is the most universally compatible format (avoids transcoding on most clients)
+- Pre-transcode media to H.264+AAC MP4 on a more powerful machine (see [Pre-Transcoding](#pre-transcoding))
+- Lower the transcoding bitrate in Jellyfin settings if quality isn't critical
+
+### Pre-Transcoding
+
+Use `scripts/transcode.sh` on your Mac (or any machine with `ffmpeg`) to convert media to H.264+AAC MP4 before uploading to the NAS. This avoids runtime transcoding on the Pi entirely.
+
+```bash
+# Single file
+./scripts/transcode.sh movie.mkv
+
+# Directory (recursive) — outputs to ./transcoded/
+./scripts/transcode.sh ~/Movies
+
+# Custom output directory
+./scripts/transcode.sh ~/Movies ./output
+```
+
+The script:
+- Encodes to H.264 (CRF 23) + AAC (128k stereo), max 1080p
+- Skips files already in the target format (H.264+AAC ≤1080p)
+- Skips files that already exist in the output directory
+- Preserves aspect ratio, never upscales
+
+After transcoding, copy the output files to the NAS media share:
+```bash
+cp transcoded/*.mp4 /Volumes/media/Movies/
+```
+
+Then trigger a library scan in Jellyfin (or wait for automatic detection).
+
+**Verify V4L2 devices on the Pi:**
+```bash
+v4l2-ctl --list-devices
+```
+Expected output includes `rpi-hevc-dec` → `/dev/video19`. Device numbers can vary — if they change after a kernel update, update `jellyfin/docker-compose.yml` accordingly.
 
 ### Environment Variables
 

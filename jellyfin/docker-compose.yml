@@ -10,6 +10,8 @@ services:
       - "1900:1900/udp"
     environment:
       TZ: ${JELLYFIN_TZ:-UTC}
+    devices:
+      - /dev/video19:/dev/video19 # V4L2 HEVC decoder (rpi-hevc-dec)
     volumes:
       - ${JELLYFIN_DATA_PATH:-/srv/jellyfin}/config:/config
       - ${JELLYFIN_DATA_PATH:-/srv/jellyfin}/cache:/cache
