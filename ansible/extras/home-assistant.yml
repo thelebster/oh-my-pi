@@ -1,0 +1,61 @@
+---
+- name: Deploy Home Assistant
+  hosts: mypi
+  become: true
+
+  tasks:
+    - name: Create Home Assistant directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - /opt/home-assistant
+        - /opt/home-assistant/config
+
+    - name: Copy docker-compose file
+      copy:
+        src: ../../home-assistant/docker-compose.yml
+        dest: /opt/home-assistant/docker-compose.yml
+      register: compose_file
+
+    - name: Deploy Home Assistant env file
+      copy:
+        content: |
+          HA_TZ={{ lookup('env', 'HA_TZ') | default('UTC', true) }}
+        dest: /opt/home-assistant/.env
+        mode: "0600"
+      register: env_file
+
+    - name: Start Home Assistant with docker compose
+      community.docker.docker_compose_v2:
+        project_src: /opt/home-assistant
+        state: present
+        pull: missing
+      register: ha_result
+
+    - name: Restart Home Assistant if config changed
+      community.docker.docker_compose_v2:
+        project_src: /opt/home-assistant
+        state: restarted
+      when: (compose_file.changed or env_file.changed) and not ha_result.changed
+
+    - name: Check if UFW is active
+      command: ufw status
+      register: ufw_status
+      changed_when: false
+
+    - name: Allow Home Assistant (port 8123) through UFW
+      ufw:
+        rule: allow
+        port: "8123"
+      when: "'Status: active' in ufw_status.stdout"
+
+    - name: Show Home Assistant status
+      debug:
+        msg: |
+          Home Assistant is running!
+          Web UI: http://{{ ansible_facts['default_ipv4']['address'] }}:8123
+          Config: /opt/home-assistant/config
+          Backups: /opt/home-assistant/config/backups
+          Complete the onboarding wizard in the browser to create your account.
