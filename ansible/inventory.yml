@@ -4,11 +4,11 @@ all:
     ansible_become_method: sudo
   hosts:
     mypi:
-      ansible_host: "{{ lookup('env', 'PI_HOST') | default('mypi.local', true) }}"
-      ansible_port: "{{ lookup('env', 'PI_SSH_PORT') | default(22, true) }}"
-      ansible_user: "{{ lookup('env', 'PI_USER') | default('pi', true) }}"
-      ansible_ssh_private_key_file: "{{ lookup('env', 'SSH_KEY') | default('~/.ssh/mypi', true) }}"
-      pi_hostname: "{{ lookup('env', 'PI_HOSTNAME') | default('mypi', true) }}"
+      ansible_host: "{{ lookup('env', 'MYPI_HOST') | default('mypi.local', true) }}"
+      ansible_port: "{{ lookup('env', 'MYPI_SSH_PORT') | default(22, true) }}"
+      ansible_user: "{{ lookup('env', 'MYPI_USER') | default('pi', true) }}"
+      ansible_ssh_private_key_file: "{{ lookup('env', 'MYPI_SSH_KEY') | default('~/.ssh/mypi', true) }}"
+      pi_hostname: "{{ lookup('env', 'MYPI_HOSTNAME') | default('mypi', true) }}"
     zeropi:
       ansible_host: "{{ lookup('env', 'ZERO_PI_HOST') | default('zeropi.local', true) }}"
       ansible_port: "{{ lookup('env', 'ZERO_PI_SSH_PORT') | default(22, true) }}"

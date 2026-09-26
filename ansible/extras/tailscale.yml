@@ -13,7 +13,7 @@
 # With TAILSCALE_SSH=true, Tailscale SSH owns port 22 on the tailnet IP, so sshd also
 # listens on TAILSCALE_SSHD_PORT: key-based SSH over the tailnet on that port, Tailscale
 # SSH on 22 as the backup. Port 22 stays on sshd for the LAN. After the first run, test
-# `ssh -p 2222 pi@<tailnet name>` before pointing Ansible at it (PI_SSH_PORT in .env; ZERO_PI_SSH_PORT / PINAS_SSH_PORT for the others).
+# `ssh -p 2222 pi@<tailnet name>` before pointing Ansible at it (MYPI_SSH_PORT in .env; ZERO_PI_SSH_PORT / PINAS_SSH_PORT for the others).
 #
 # Usage:
 #   ./play extra tailscale --limit mypi

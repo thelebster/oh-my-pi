@@ -138,7 +138,7 @@ System:
 - **connect-desktop** / **connect-headless** — Raspberry Pi Connect
 
 Network:
-- **tailscale** — Tailscale exit node (+ optional Tailscale SSH), auth key from `.env`. Two SSH paths from anywhere: key-based sshd on tailnet port 2222 (main, Ansible via `PI_SSH_PORT=2222`) and Tailscale SSH on 22 (backup). Full guide incl. the SSH policy: **[TAILSCALE.md](TAILSCALE.md)**
+- **tailscale** — Tailscale exit node (+ optional Tailscale SSH), auth key from `.env`. Two SSH paths from anywhere: key-based sshd on tailnet port 2222 (main, Ansible via `MYPI_SSH_PORT=2222`) and Tailscale SSH on 22 (backup). Full guide incl. the SSH policy: **[TAILSCALE.md](TAILSCALE.md)**
 
 Cloudflare:
 - **ddns** — Cloudflare DDNS cron (mypi)

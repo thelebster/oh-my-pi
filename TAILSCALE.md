@@ -27,7 +27,7 @@ tailscale set --exit-node=                                     # Mac: stop
 
 | Path | Command | Auth | Handled by | Survives |
 |------|---------|------|------------|----------|
-| **Main** | `ssh -p 2222 pi@mypi` (Ansible via `PI_SSH_PORT=2222`) | `~/.ssh/mypi` key | sshd | Tailscale SSH or policy problems |
+| **Main** | `ssh -p 2222 pi@mypi` (Ansible via `MYPI_SSH_PORT=2222`) | `~/.ssh/mypi` key | sshd | Tailscale SSH or policy problems |
 | **Backup** | `ssh pi@mypi` (port 22) | tailnet login + [policy](#6-tailscale-ssh-policy) | tailscaled | broken `sshd_config`, lost key, fail2ban, UFW |
 | **Last resort** | browser shell at https://connect.raspberrypi.com | Raspberry Pi ID | rpi-connect | anything SSH-related |
 | LAN | `ssh pi@mypi.local` (port 22) | `~/.ssh/mypi` key | sshd | only at home |
@@ -65,10 +65,10 @@ Boot the Pi on your LAN and wait a minute for first boot to finish.
 
 ```
 # Pi (LAN for now; switched to the tailnet in step 9)
-PI_HOST=mypi.local
-PI_USER=pi
-PI_HOSTNAME=mypi
-SSH_KEY=~/.ssh/mypi
+MYPI_HOST=mypi.local
+MYPI_USER=pi
+MYPI_HOSTNAME=mypi
+MYPI_SSH_KEY=~/.ssh/mypi
 
 # Tailscale
 TAILSCALE_AUTH_KEY=tskey-auth-...
@@ -80,9 +80,9 @@ RPI_CONNECT_AUTH_KEY=...
 
 | Variable | Purpose |
 |----------|---------|
-| `PI_HOST` | Where Ansible connects: `mypi.local` (LAN only) or the MagicDNS name `mypi` (anywhere). |
-| `PI_SSH_PORT` | Ansible SSH port. Empty = 22. `2222` = main path over the tailnet (step 9). |
-| `SSH_KEY` | Key for sshd (main and LAN paths). Must be the key pasted into Imager. Not used by Tailscale SSH. |
+| `MYPI_HOST` | Where Ansible connects: `mypi.local` (LAN only) or the MagicDNS name `mypi` (anywhere). |
+| `MYPI_SSH_PORT` | Ansible SSH port. Empty = 22. `2222` = main path over the tailnet (step 9). |
+| `MYPI_SSH_KEY` | Key for sshd (main and LAN paths). Must be the key pasted into Imager. Not used by Tailscale SSH. |
 | `TAILSCALE_AUTH_KEY` | Joins the Pi to the tailnet. Only used for the first join. |
 | `TAILSCALE_SSH` | `true` = Tailscale SSH (backup path) plus sshd on the tailnet port. |
 | `TAILSCALE_SSHD_PORT` | sshd port on the tailnet while Tailscale SSH owns 22. Default `2222`. |
@@ -176,8 +176,8 @@ ssh pi@mypi true                                     # backup: Tailscale SSH, no
 Only after step 8's `ssh -p 2222` works. In `.env`:
 
 ```
-PI_HOST=mypi
-PI_SSH_PORT=2222
+MYPI_HOST=mypi
+MYPI_SSH_PORT=2222
 ```
 
 ```bash
@@ -276,14 +276,14 @@ ssh pi@100.x.y.z          # or the tailnet IP (tailscale ip -4 mypi)
 ./play extra tailscale --limit mypi --tags tailscale-remove   # leave tailnet, uninstall, remove UFW rules + sshd port
 ```
 
-Remove only from the LAN (`PI_HOST=mypi.local`, `PI_SSH_PORT=` in `.env`): leaving the tailnet cuts every tailnet connection.
+Remove only from the LAN (`MYPI_HOST=mypi.local`, `MYPI_SSH_PORT=` in `.env`): leaving the tailnet cuts every tailnet connection.
 
 ---
 
 ## Troubleshooting
 
 **Ansible hangs at "Gathering Facts" over Tailscale.**
-It is connecting through Tailscale SSH (port 22) in **check** mode and waiting for a browser login whose URL it does not print. Either set the [policy](#6-tailscale-ssh-policy) to accept, use the main path (`PI_SSH_PORT=2222`), or run `ssh pi@mypi true` once to get the URL (valid ~12 h).
+It is connecting through Tailscale SSH (port 22) in **check** mode and waiting for a browser login whose URL it does not print. Either set the [policy](#6-tailscale-ssh-policy) to accept, use the main path (`MYPI_SSH_PORT=2222`), or run `ssh pi@mypi true` once to get the URL (valid ~12 h).
 
 **`ssh -p 2222` times out.**
 Check over the backup path that sshd listens on 2222 (`sshd ports` must list `2222`):
@@ -311,7 +311,7 @@ ssh -t -i ~/.ssh/mypi pi@mypi.local "echo 'pi ALL=(ALL) NOPASSWD: ALL' | sudo te
 ```
 
 **"Permission denied (publickey)" from Ansible but `ssh` works.**
-`SSH_KEY` in `.env` points at the wrong key. Ansible ignores `~/.ssh/config`.
+`MYPI_SSH_KEY` in `.env` points at the wrong key. Ansible ignores `~/.ssh/config`.
 
 **Locked out of SSH entirely.**
 Try the other path first: main `ssh -p 2222 pi@mypi` (sshd) or backup `ssh pi@mypi` (Tailscale SSH, independent of sshd). Last resort: the Raspberry Pi Connect shell. Then, on the Pi:

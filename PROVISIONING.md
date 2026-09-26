@@ -34,13 +34,13 @@ Boot the Pi and wait a minute for first boot to finish.
 Edit `.env`:
 
 ```
-PI_HOST=mypi.local     # mDNS name = hostname + .local
-PI_USER=pi
-PI_HOSTNAME=mypi
-SSH_KEY=~/.ssh/mypi
+MYPI_HOST=mypi.local     # mDNS name = hostname + .local
+MYPI_USER=pi
+MYPI_HOSTNAME=mypi
+MYPI_SSH_KEY=~/.ssh/mypi
 ```
 
-`SSH_KEY` must be the key you pasted into Imager. Ansible does **not** read `~/.ssh/config`, so a wrong value here fails even if `ssh` works.
+`MYPI_SSH_KEY` must be the key you pasted into Imager. Ansible does **not** read `~/.ssh/config`, so a wrong value here fails even if `ssh` works.
 
 Optional SSH alias in `~/.ssh/config`:
 
@@ -101,11 +101,11 @@ Both used to be part of the base. Run them only if needed.
 
 ```bash
 ./play extra locale --limit mypi                             # en_US.UTF-8 + sshd SetEnv drop-in; stops macOS SSH locale warnings
-./play extra hostname --limit mypi                           # sets hostname from PI_HOSTNAME
+./play extra hostname --limit mypi                           # sets hostname from MYPI_HOSTNAME
 ./play extra hostname --limit mypi -e pi_hostname=new-name   # rename: run this FIRST, then update .env + ssh config
 ```
 
-The hostname extra also fixes `/etc/hosts` and restarts avahi, so the new `<name>.local` works without a reboot. The old name stops resolving immediately, so update `PI_HOST` in `.env` right after.
+The hostname extra also fixes `/etc/hosts` and restarts avahi, so the new `<name>.local` works without a reboot. The old name stops resolving immediately, so update `MYPI_HOST` in `.env` right after.
 
 ## 5. Remote access from anywhere
 
@@ -183,7 +183,7 @@ If you set up Raspberry Pi Connect, open https://connect.raspberrypi.com/devices
 ./cmd -m ping --limit mypi
 ./cmd -m shell -a "uptime" --limit mypi                          # as root
 ./cmd -m shell -a "whoami" --limit mypi -e "ansible_become=false" # as pi
-make sh                                                           # SSH in (uses PI_HOST from .env)
+make sh                                                           # SSH in (uses MYPI_HOST from .env)
 make reboot
 ```
 
@@ -221,7 +221,7 @@ ssh -t mypi.local "echo 'pi ALL=(ALL) NOPASSWD: ALL' | sudo tee /etc/sudoers.d/0
 The base playbook now maintains this file (`--tags sudo`), so it cannot happen again after the first base run.
 
 **"Permission denied (publickey)" from Ansible but `ssh` works.**
-`SSH_KEY` in `.env` points at the wrong key. Ansible ignores `~/.ssh/config`.
+`MYPI_SSH_KEY` in `.env` points at the wrong key. Ansible ignores `~/.ssh/config`.
 
 **A task that should run as `pi` runs as root.**
 The inventory sets `ansible_become: true`, which overrides `become: false` on a task. Use
@@ -235,7 +235,7 @@ on the task instead. User-session tools (`rpi-connect`, `systemctl --user`) also
 The Imager auth key is short-lived and was already expired by the time the Pi first reached the network. Sign in again with section 5b.
 
 **`<name>.local` does not resolve after a rename.**
-Wait a few seconds for avahi, then `dns-sd -G v4 <name>.local` on the Mac. If still nothing: `./cmd -m shell -a "systemctl restart avahi-daemon" --limit mypi` using the IP as `PI_HOST`.
+Wait a few seconds for avahi, then `dns-sd -G v4 <name>.local` on the Mac. If still nothing: `./cmd -m shell -a "systemctl restart avahi-daemon" --limit mypi` using the IP as `MYPI_HOST`.
 
 **`--check` fails on a fresh Pi at the UFW or Tailscale step.**
 Expected: check mode cannot install the package the next task needs. Run for real.

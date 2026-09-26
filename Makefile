@@ -7,10 +7,10 @@
 
 -include .env
 
-export PI_HOST ?= mypi.local
-export PI_USER ?= pi
-export SSH_KEY ?=
-export PI_SSH_PORT ?=
+export MYPI_HOST ?= mypi.local
+export MYPI_USER ?= pi
+export MYPI_SSH_KEY ?=
+export MYPI_SSH_PORT ?=
 
 export CF_API_TOKEN ?=
 export CF_ZONE_ID ?=
@@ -24,8 +24,8 @@ export TELEGRAM_ALLOWED_USERS ?=
 
 export CLAUDE_DANGEROUS_MODE ?=
 
-SSH_KEY_OPT := $(if $(SSH_KEY),-i $(SSH_KEY))
-SSH = ssh$(if $(SSH_KEY_OPT), $(SSH_KEY_OPT))$(if $(PI_SSH_PORT), -p $(PI_SSH_PORT)) $(PI_USER)@$(PI_HOST)
+SSH_KEY_OPT := $(if $(MYPI_SSH_KEY),-i $(MYPI_SSH_KEY))
+SSH = ssh$(if $(SSH_KEY_OPT), $(SSH_KEY_OPT))$(if $(MYPI_SSH_PORT), -p $(MYPI_SSH_PORT)) $(MYPI_USER)@$(MYPI_HOST)
 
 ## help    : Print commands help.
 help: Makefile

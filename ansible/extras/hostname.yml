@@ -1,5 +1,5 @@
 ---
-# Set hostname from the per-host `pi_hostname` inventory var (PI_HOSTNAME etc. in .env).
+# Set hostname from the per-host `pi_hostname` inventory var (MYPI_HOSTNAME / ZERO_PI_HOSTNAME / PINAS_HOSTNAME in .env).
 # Also fixes /etc/hosts and re-announces the new <hostname>.local via avahi, so no reboot is needed.
 #
 # Usage:
@@ -37,7 +37,7 @@
 
     - name: Show result
       debug:
-        msg: "Hostname is now {{ pi_hostname }} — reachable as {{ pi_hostname }}.local. Update PI_HOST/PI_HOSTNAME in .env and ~/.ssh/config."
+        msg: "Hostname is now {{ pi_hostname }} — reachable as {{ pi_hostname }}.local. Update <PREFIX>_HOST/<PREFIX>_HOSTNAME in .env (MYPI_, ZERO_PI_, PINAS_) and ~/.ssh/config."
 
   handlers:
     - name: Restart avahi
