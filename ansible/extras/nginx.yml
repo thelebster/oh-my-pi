@@ -1,0 +1,21 @@
+---
+# Install and start Nginx.
+#
+# Usage:
+#   ./play extra nginx --limit mypi
+#
+- name: Install Nginx
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Install Nginx
+      apt:
+        name: nginx
+        state: present
+
+    - name: Start Nginx
+      systemd:
+        name: nginx
+        enabled: true
+        state: started

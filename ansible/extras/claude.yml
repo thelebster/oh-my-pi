@@ -1,0 +1,55 @@
+---
+# Install Claude Code CLI with the Pi 5 ripgrep fix, settings, prompt and claude-cmd wrapper.
+#
+# Usage:
+#   ./play extra claude --limit mypi
+#
+- name: Install Claude Code
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Install ripgrep (fix for Pi 5 16KB pages)
+      apt:
+        name: ripgrep
+        state: present
+
+    - name: Set USE_BUILTIN_RIPGREP for all users
+      lineinfile:
+        path: /etc/environment
+        line: 'USE_BUILTIN_RIPGREP=0'
+        create: true
+
+    - name: Install Claude Code via native installer
+      shell: curl -fsSL https://claude.ai/install.sh | bash
+      args:
+        creates: /home/{{ ansible_user }}/.local/bin/claude
+      vars:
+        ansible_become: false
+    - name: Create Claude settings directory
+      file:
+        path: /home/{{ ansible_user }}/.claude
+        state: directory
+        owner: "{{ ansible_user }}"
+        mode: "0755"
+
+    - name: Deploy Claude settings
+      copy:
+        src: ../files/claude-settings.json
+        dest: /home/{{ ansible_user }}/.claude/settings.json
+        owner: "{{ ansible_user }}"
+        mode: "0644"
+
+    - name: Deploy Claude system prompt
+      copy:
+        src: ../files/claude-prompt.md
+        dest: /home/{{ ansible_user }}/.claude/prompt.md
+        owner: "{{ ansible_user }}"
+        mode: "0644"
+
+    - name: Deploy Claude runner script
+      copy:
+        src: ../scripts/claude.sh
+        dest: /home/{{ ansible_user }}/.local/bin/claude-cmd
+        owner: "{{ ansible_user }}"
+        mode: "0755"

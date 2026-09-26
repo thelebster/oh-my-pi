@@ -1,0 +1,81 @@
+---
+# Shared by connect-desktop.yml and connect-headless.yml.
+# Enables Connect for the user and signs in non-interactively when
+# RPI_CONNECT_AUTH_KEY is set (create one at https://connect.raspberrypi.com → Settings → Auth keys).
+#
+# rpi-connect talks to the user's systemd/D-Bus session, which Ansible's
+# non-login session doesn't export, so the env is set explicitly below.
+
+- name: Get user uid
+  command: id -u {{ ansible_user }}
+  register: connect_uid
+  changed_when: false
+
+- name: Set user session environment
+  set_fact:
+    connect_env:
+      XDG_RUNTIME_DIR: "/run/user/{{ connect_uid.stdout }}"
+      DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ connect_uid.stdout }}/bus"
+
+- name: Enable lingering so Connect runs without a login session
+  command: loginctl enable-linger {{ ansible_user }}
+  args:
+    creates: /var/lib/systemd/linger/{{ ansible_user }}
+
+- name: Check Connect service state
+  command: systemctl --user is-active rpi-connect
+  vars:
+    ansible_become: false
+  environment: "{{ connect_env }}"
+  register: connect_active
+  changed_when: false
+  failed_when: false
+
+- name: Enable Connect for the user
+  command: rpi-connect on
+  vars:
+    ansible_become: false
+  environment: "{{ connect_env }}"
+  when: connect_active.stdout != "active"
+
+- name: Check Connect sign-in status
+  command: rpi-connect status
+  vars:
+    ansible_become: false
+  environment: "{{ connect_env }}"
+  register: connect_status
+  changed_when: false
+  failed_when: false
+
+- name: Sign in with auth key
+  command: rpi-connect signin -auth-key {{ lookup('env', 'RPI_CONNECT_AUTH_KEY') }}
+  vars:
+    ansible_become: false
+  environment: "{{ connect_env }}"
+  no_log: true
+  when:
+    - lookup('env', 'RPI_CONNECT_AUTH_KEY') != ""
+    - "'Signed in: no' in connect_status.stdout"
+
+- name: Show sign-in hint
+  debug:
+    msg: >-
+      Not signed in and RPI_CONNECT_AUTH_KEY is not set.
+      Either add an auth key to .env and rerun, or sign in interactively:
+      ssh -t {{ ansible_host }} rpi-connect signin
+  when:
+    - lookup('env', 'RPI_CONNECT_AUTH_KEY') == ""
+    - "'Signed in: no' in connect_status.stdout"
+
+- name: Show Connect status
+  command: rpi-connect status
+  vars:
+    ansible_become: false
+  environment: "{{ connect_env }}"
+  register: connect_final
+  changed_when: false
+  failed_when: false
+
+- name: Connect status
+  debug:
+    msg: "{{ (connect_final.stdout_lines + connect_final.stderr_lines) | select | list }}"

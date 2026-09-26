@@ -83,7 +83,6 @@
     # === CLOUDFLARE CACHE RULE ===
     - name: Get zone name from Cloudflare
       delegate_to: localhost
-      become: false
       vars:
         ansible_become: false
       shell: >
@@ -97,7 +96,6 @@
 
     - name: Create Cloudflare cache rule for HLS stream
       delegate_to: localhost
-      become: false
       vars:
         ansible_become: false
       shell: bash {{ playbook_dir }}/../scripts/cloudflare-cache-rule.sh

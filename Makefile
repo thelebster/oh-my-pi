@@ -10,6 +10,7 @@
 export PI_HOST ?= mypi.local
 export PI_USER ?= pi
 export SSH_KEY ?=
+export PI_SSH_PORT ?=
 
 export CF_API_TOKEN ?=
 export CF_ZONE_ID ?=
@@ -24,7 +25,7 @@ export TELEGRAM_ALLOWED_USERS ?=
 export CLAUDE_DANGEROUS_MODE ?=
 
 SSH_KEY_OPT := $(if $(SSH_KEY),-i $(SSH_KEY))
-SSH = ssh$(if $(SSH_KEY_OPT), $(SSH_KEY_OPT)) $(PI_USER)@$(PI_HOST)
+SSH = ssh$(if $(SSH_KEY_OPT), $(SSH_KEY_OPT))$(if $(PI_SSH_PORT), -p $(PI_SSH_PORT)) $(PI_USER)@$(PI_HOST)
 
 ## help    : Print commands help.
 help: Makefile
@@ -38,9 +39,9 @@ run:
 check:
 	ansible-playbook ansible/playbook.yml --check
 
-## status  : Show versions and service status.
+## status  : Show status (all hosts). Usage: make status  OR  make status mypi
 status:
-	ansible-playbook ansible/playbook.yml --tags "status"
+	@./play extra status $(if $(filter-out $@,$(MAKECMDGOALS)),--limit $(filter-out $@,$(MAKECMDGOALS)))
 
 ## ping    : Test connection to Pi.
 ping:

@@ -54,7 +54,6 @@
     # === INGRESS ===
     - name: Configure tunnel ingress and DNS
       delegate_to: localhost
-      become: false
       vars:
         ansible_become: false
       shell: bash {{ playbook_dir }}/../scripts/cloudflare-create-tunnel.sh
@@ -69,7 +68,6 @@
     # === REMOVE (opt-in only) ===
     - name: Remove tunnel ingress and DNS
       delegate_to: localhost
-      become: false
       vars:
         ansible_become: false
       shell: bash {{ playbook_dir }}/../scripts/cloudflare-remove-tunnel.sh

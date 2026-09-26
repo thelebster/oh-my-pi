@@ -1,0 +1,27 @@
+---
+# Install Docker CE and add the connecting user to the docker group.
+#
+# Usage:
+#   ./play extra docker --limit mypi
+#
+- name: Install Docker
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Install Docker
+      shell: curl -fsSL https://get.docker.com | sh
+      args:
+        creates: /usr/bin/docker
+
+    - name: Add user to docker group
+      user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: true
+
+    - name: Start Docker
+      systemd:
+        name: docker
+        enabled: true
+        state: started

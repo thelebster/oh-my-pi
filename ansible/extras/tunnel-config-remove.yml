@@ -1,0 +1,19 @@
+---
+# Included by tunnel-config.yml — removes a single tunnel config.
+
+- name: "Load config: {{ config_file.path | basename }}"
+  set_fact:
+    tunnel_config: "{{ lookup('file', config_file.path) | from_yaml }}"
+
+- name: "Remove: {{ config_file.path | basename }}"
+  delegate_to: localhost
+  vars:
+    ansible_become: false
+  shell: bash {{ playbook_dir }}/../scripts/cloudflare-remove-tunnel-config.sh
+  environment:
+    CF_TUNNEL_TOKEN: "{{ lookup('env', tunnel_config.token_var) }}"
+    CF_ZONE_ID: "{{ lookup('env', tunnel_config.zone_var) }}"
+    CF_TUNNEL_INGRESS: "{{ tunnel_config.ingress | to_json }}"
+  when:
+    - lookup('env', tunnel_config.token_var) != ''
+    - lookup('env', tunnel_config.zone_var) != ''

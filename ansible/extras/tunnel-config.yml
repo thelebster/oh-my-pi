@@ -1,0 +1,52 @@
+---
+# Apply pre-defined Cloudflare Tunnel ingress configs.
+# Reads all configs from ansible/files/cloudflared/<host>/*.yml
+#
+# Usage:
+#   ./play extra tunnel-config --limit zeropi
+#   ./play extra tunnel-config --limit pinas
+#   ./play extra tunnel-config --limit mypi
+#
+# Remove:
+#   ./play extra tunnel-config --limit zeropi --tags tunnel-remove
+#
+# Requires cloudflared already installed (use the per-host tunnel playbook first).
+
+- name: Apply Cloudflare Tunnel configs
+  hosts: all
+  gather_facts: false
+
+  vars:
+    tunnel_config_dir: "{{ playbook_dir }}/../files/cloudflared/{{ inventory_hostname }}"
+
+  tasks:
+    - name: Find tunnel configs
+      delegate_to: localhost
+      vars:
+        ansible_become: false
+      find:
+        paths: "{{ tunnel_config_dir }}"
+        patterns: "*.yml"
+      register: tunnel_config_files
+      tags: [tunnel, tunnel-remove]
+
+    - name: Fail if no configs found
+      fail:
+        msg: "No tunnel configs found in ansible/files/cloudflared/{{ inventory_hostname }}/"
+      when: tunnel_config_files.files | length == 0
+      tags: [tunnel, tunnel-remove]
+
+    - name: Apply tunnel configs
+      include_tasks: tunnel-config-apply.yml
+      loop: "{{ tunnel_config_files.files | sort(attribute='path') }}"
+      loop_control:
+        loop_var: config_file
+      tags: tunnel
+
+    # === REMOVE (opt-in only) ===
+    - name: Remove tunnel configs
+      include_tasks: tunnel-config-remove.yml
+      loop: "{{ tunnel_config_files.files | sort(attribute='path') }}"
+      loop_control:
+        loop_var: config_file
+      tags: [never, tunnel-remove]

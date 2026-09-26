@@ -1,0 +1,47 @@
+---
+# Set hostname from the per-host `pi_hostname` inventory var (PI_HOSTNAME etc. in .env).
+# Also fixes /etc/hosts and re-announces the new <hostname>.local via avahi, so no reboot is needed.
+#
+# Usage:
+#   ./play extra hostname --limit mypi
+#   ./play extra hostname --limit mypi -e pi_hostname=new-name   # rename before updating .env
+#
+- name: Set hostname
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Check for cloud-init
+      stat:
+        path: /etc/cloud/cloud.cfg
+      register: cloud_cfg
+
+    - name: Preserve hostname across cloud-init reboots
+      lineinfile:
+        path: /etc/cloud/cloud.cfg
+        regexp: '^preserve_hostname'
+        line: 'preserve_hostname: true'
+      when: cloud_cfg.stat.exists
+
+    - name: Set hostname
+      hostname:
+        name: "{{ pi_hostname }}"
+      notify: Restart avahi
+
+    - name: Point 127.0.1.1 at the new hostname
+      lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1\s'
+        line: "127.0.1.1 {{ pi_hostname }}"
+      notify: Restart avahi
+
+    - name: Show result
+      debug:
+        msg: "Hostname is now {{ pi_hostname }} — reachable as {{ pi_hostname }}.local. Update PI_HOST/PI_HOSTNAME in .env and ~/.ssh/config."
+
+  handlers:
+    - name: Restart avahi
+      systemd:
+        name: avahi-daemon
+        state: restarted
+      failed_when: false

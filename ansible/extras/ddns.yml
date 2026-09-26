@@ -1,0 +1,62 @@
+---
+# Cloudflare DDNS: update the CF_DOMAIN A record every 5 minutes.
+# Requires CF_API_TOKEN, CF_ZONE_ID and CF_DOMAIN in .env.
+#
+# Usage:
+#   ./play extra ddns --limit mypi
+#   ./play extra ddns --limit mypi --tags ddns-remove
+#
+- name: Cloudflare DDNS
+  hosts: mypi
+  become: true
+
+  tasks:
+    - name: Deploy Cloudflare DDNS env file
+      copy:
+        content: |
+          CF_API_TOKEN={{ lookup("env", "CF_API_TOKEN") }}
+          CF_ZONE_ID={{ lookup("env", "CF_ZONE_ID") }}
+          CF_DOMAIN={{ lookup("env", "CF_DOMAIN") }}
+        dest: /etc/cloudflare-ddns.env
+        mode: "0600"
+      when: lookup("env", "CF_DOMAIN") != ""
+      tags: install
+
+    - name: Deploy Cloudflare DDNS update script
+      copy:
+        src: ../scripts/cloudflare-ddns.sh
+        dest: /usr/local/bin/cloudflare-ddns.sh
+        mode: "0700"
+      when: lookup("env", "CF_DOMAIN") != ""
+      tags: install
+
+    - name: Install dnsutils for dig command
+      apt:
+        name: dnsutils
+        state: present
+      when: lookup("env", "CF_DOMAIN") != ""
+      tags: install
+
+    - name: Add DDNS cron job (every 5 minutes)
+      cron:
+        name: "Cloudflare DDNS update"
+        minute: "*/5"
+        job: "/usr/local/bin/cloudflare-ddns.sh"
+      when: lookup("env", "CF_DOMAIN") != ""
+      tags: install
+
+    # === REMOVE ===
+    - name: Remove DDNS cron job
+      cron:
+        name: "Cloudflare DDNS update"
+        state: absent
+      tags: [never, ddns-remove]
+
+    - name: Remove DDNS script and env file
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /usr/local/bin/cloudflare-ddns.sh
+        - /etc/cloudflare-ddns.env
+      tags: [never, ddns-remove]

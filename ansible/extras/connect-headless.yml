@@ -1,4 +1,10 @@
 ---
+# Raspberry Pi Connect for Pi OS Lite (remote shell only, no screen sharing).
+# Set RPI_CONNECT_AUTH_KEY in .env for non-interactive sign-in.
+#
+# Usage:
+#   ./play extra connect-headless --limit mypi
+#
 - name: Install Raspberry Pi Connect (headless)
   hosts: all
   become: true
@@ -13,3 +19,6 @@
       apt:
         name: rpi-connect-lite
         state: present
+
+    - name: Enable and sign in
+      include_tasks: tasks/rpi-connect-signin.yml

@@ -1,8 +1,17 @@
 ---
 # =============================================
-# COMMON SETUP (all Pis)
+# BASE SETUP (all Pis)
 # =============================================
-- name: Common Pi setup
+# Minimal, safe-to-rerun base. Everything else lives in ansible/extras/.
+#
+# Usage:
+#   ./play                    # all hosts
+#   ./play --limit mypi       # single host
+#   ./play --check            # dry run
+#   ./play --tags ssh         # one section
+#
+# Tags: updates, ssh, fan, eeprom
+- name: Base Pi setup
   hosts: all
   become: true
 
@@ -20,7 +29,7 @@
         state: present
       tags: updates
 
-    - name: Enable firewall with SSH
+    - name: Allow SSH, HTTP and HTTPS through the firewall
       ufw:
         rule: allow
         port: "{{ item }}"
@@ -32,42 +41,17 @@
         state: enabled
       tags: updates
 
-    # === HOSTNAME ===
-    - name: Preserve hostname across cloud-init reboots
-      lineinfile:
-        path: /etc/cloud/cloud.cfg
-        regexp: '^preserve_hostname'
-        line: 'preserve_hostname: true'
-      tags: hostname
-
-    - name: Set hostname
-      hostname:
-        name: "{{ pi_hostname }}"
-      notify: Reboot required
-      tags: hostname
-
-    # === FIX LOCALE (macOS SSH compatibility) ===
-    - name: Enable en_US.UTF-8 locale
-      lineinfile:
-        path: /etc/locale.gen
-        regexp: '^#? *en_US.UTF-8 UTF-8'
-        line: 'en_US.UTF-8 UTF-8'
-      tags: locale
-
-    - name: Generate locales
-      command: locale-gen en_US.UTF-8
-      args:
-        creates: /usr/lib/locale/en_US.utf8
-      tags: locale
-
-    - name: Set default locale
+    # === SUDO ===
+    # raspberrypi-sys-mods upgrades can drop the stock NOPASSWD rule, which locks Ansible out.
+    - name: Ensure passwordless sudo for the Ansible user
       copy:
-        content: |
-          LANG=en_US.UTF-8
-          LC_CTYPE=en_US.UTF-8
-        dest: /etc/default/locale
-        mode: "0644"
-      tags: locale
+        content: "{{ ansible_user }} ALL=(ALL) NOPASSWD: ALL\n"
+        dest: /etc/sudoers.d/010_pi-nopasswd
+        owner: root
+        group: root
+        mode: "0440"
+        validate: visudo -cf %s
+      tags: [updates, sudo]
 
     # === SSH HARDENING ===
     - name: Disable SSH password authentication
@@ -92,11 +76,6 @@
         state: present
       tags: ssh
 
-    - name: Reload systemd daemon
-      systemd:
-        daemon_reload: true
-      tags: ssh
-
     - name: Configure fail2ban SSH jail
       copy:
         content: |
@@ -118,142 +97,14 @@
         state: started
       tags: ssh
 
-    # rpi-connect moved to extras: connect-desktop (rpi-connect) and connect-headless (rpi-connect-lite)
-    # Desktop vs lite matters — full rpi-connect fails on headless Pi OS Lite (no Wayland)
-
-  handlers:
-    - name: Reboot required
-      debug:
-        msg: "Reboot required to apply changes"
-
-    - name: Restart SSH
-      systemd:
-        name: ssh
-        state: restarted
-
-    - name: Restart fail2ban
-      systemd:
-        name: fail2ban
-        state: restarted
-
-# =============================================
-# PI 5 SETUP (mypi only)
-# =============================================
-- name: Setup Raspberry Pi 5
-  hosts: mypi
-  become: true
-
-  tasks:
-    # === DOCKER ===
-    - name: Install Docker
-      shell: curl -fsSL https://get.docker.com | sh
-      args:
-        creates: /usr/bin/docker
-      tags: docker
-
-    - name: Add user to docker group
-      user:
-        name: "{{ ansible_user }}"
-        groups: docker
-        append: true
-      tags: docker
-
-    - name: Start Docker
-      systemd:
-        name: docker
-        enabled: true
-        state: started
-      tags: docker
-
-    # === EEPROM FIRMWARE ===
-    - name: Check EEPROM update status
-      command: rpi-eeprom-update
-      register: eeprom_check
+    # === PI 5 ONLY: FAN + EEPROM ===
+    - name: Check Pi model
+      command: cat /proc/device-tree/model
+      register: pi_model
       changed_when: false
       failed_when: false
-      tags: eeprom
+      tags: [fan, eeprom]
 
-    - name: Apply EEPROM update if available
-      command: rpi-eeprom-update -a
-      when: "'UPDATE AVAILABLE' in eeprom_check.stdout"
-      notify: Reboot required
-      tags: eeprom
-
-    # === NGINX ===
-    - name: Install Nginx
-      apt:
-        name: nginx
-        state: present
-      tags: nginx
-
-    - name: Start Nginx
-      systemd:
-        name: nginx
-        enabled: true
-        state: started
-      tags: nginx
-
-    # === CLAUDE CODE ===
-    - name: Install ripgrep (fix for Pi 5 16KB pages)
-      apt:
-        name: ripgrep
-        state: present
-      tags: claude
-
-    - name: Set USE_BUILTIN_RIPGREP for all users
-      lineinfile:
-        path: /etc/environment
-        line: 'USE_BUILTIN_RIPGREP=0'
-        create: true
-      tags: claude
-
-    - name: Install Claude Code via native installer
-      shell: curl -fsSL https://claude.ai/install.sh | bash
-      args:
-        creates: /home/{{ ansible_user }}/.local/bin/claude
-      become: false
-      tags: claude
-
-    - name: Create Claude settings directory
-      file:
-        path: /home/{{ ansible_user }}/.claude
-        state: directory
-        owner: "{{ ansible_user }}"
-        mode: "0755"
-      tags: claude
-
-    - name: Deploy Claude settings
-      copy:
-        src: files/claude-settings.json
-        dest: /home/{{ ansible_user }}/.claude/settings.json
-        owner: "{{ ansible_user }}"
-        mode: "0644"
-      tags: claude
-
-    - name: Deploy Claude system prompt
-      copy:
-        src: files/claude-prompt.md
-        dest: /home/{{ ansible_user }}/.claude/prompt.md
-        owner: "{{ ansible_user }}"
-        mode: "0644"
-      tags: claude
-
-    - name: Deploy Claude runner script
-      copy:
-        src: scripts/claude.sh
-        dest: /home/{{ ansible_user }}/.local/bin/claude-cmd
-        owner: "{{ ansible_user }}"
-        mode: "0755"
-      tags: claude
-
-    # === STRESS TESTING ===
-    - name: Install stress tools
-      apt:
-        name: [stress-ng, sysbench, iperf3]
-        state: present
-      tags: stress
-
-    # === FAN CONFIGURATION ===
     - name: Configure fan temperature thresholds
       blockinfile:
         path: /boot/firmware/config.txt
@@ -271,284 +122,37 @@
           dtparam=fan_temp3=75000
           dtparam=fan_temp3_hyst=5000
           dtparam=fan_temp3_speed=250
+      when: "'Raspberry Pi 5' in pi_model.stdout"
       notify: Reboot required
       tags: fan
 
-    # === CLOUDFLARE DDNS (requires CF_API_TOKEN) ===
-    - name: Deploy Cloudflare DDNS env file
-      copy:
-        content: |
-          CF_API_TOKEN={{ lookup("env", "CF_API_TOKEN") }}
-          CF_ZONE_ID={{ lookup("env", "CF_ZONE_ID") }}
-          CF_DOMAIN={{ lookup("env", "CF_DOMAIN") }}
-        dest: /etc/cloudflare-ddns.env
-        mode: "0600"
-      when: lookup("env", "CF_DOMAIN") != ""
-      tags: ddns
-
-    - name: Deploy Cloudflare DDNS update script
-      copy:
-        src: scripts/cloudflare-ddns.sh
-        dest: /usr/local/bin/cloudflare-ddns.sh
-        mode: "0700"
-      when: lookup("env", "CF_DOMAIN") != ""
-      tags: ddns
-
-    - name: Install dnsutils for dig command
-      apt:
-        name: dnsutils
-        state: present
-      when: lookup("env", "CF_DOMAIN") != ""
-      tags: ddns
-
-    - name: Add DDNS cron job (every 5 minutes)
-      cron:
-        name: "Cloudflare DDNS update"
-        minute: "*/5"
-        job: "/usr/local/bin/cloudflare-ddns.sh"
-      when: lookup("env", "CF_DOMAIN") != ""
-      tags: ddns
-
-    - name: Remove DDNS cron job
-      cron:
-        name: "Cloudflare DDNS update"
-        state: absent
-      tags: [never, ddns-remove]
-
-    - name: Remove DDNS script and env file
-      file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - /usr/local/bin/cloudflare-ddns.sh
-        - /etc/cloudflare-ddns.env
-      tags: [never, ddns-remove]
-
-    # === CLOUDFLARE TUNNEL (requires CF_TUNNEL_TOKEN) ===
-    - name: Add cloudflared apt key
-      get_url:
-        url: https://pkg.cloudflare.com/cloudflare-main.gpg
-        dest: /usr/share/keyrings/cloudflare-main.gpg
-        mode: "0644"
-      when: lookup("env", "CF_TUNNEL_TOKEN") != ""
-      tags: tunnel
-
-    - name: Add cloudflared apt repo
-      copy:
-        content: "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared bookworm main\n"
-        dest: /etc/apt/sources.list.d/cloudflared.list
-        mode: "0644"
-      register: cloudflared_repo
-      when: lookup("env", "CF_TUNNEL_TOKEN") != ""
-      tags: tunnel
-
-    - name: Update apt cache for cloudflared
-      apt:
-        update_cache: true
-      when: cloudflared_repo.changed | default(false)
-      tags: tunnel
-
-    - name: Install cloudflared
-      apt:
-        name: cloudflared
-        state: present
-      when: lookup("env", "CF_TUNNEL_TOKEN") != ""
-      tags: tunnel
-
-    - name: Install cloudflared tunnel service
-      shell: cloudflared service install {{ lookup("env", "CF_TUNNEL_TOKEN") }}
-      args:
-        creates: /etc/systemd/system/cloudflared.service
-      when: lookup("env", "CF_TUNNEL_TOKEN") != ""
-      tags: tunnel
-
-    - name: Enable and start cloudflared
-      systemd:
-        name: cloudflared
-        enabled: true
-        state: started
-      when: lookup("env", "CF_TUNNEL_TOKEN") != ""
-      tags: tunnel
-
-    - name: Configure tunnel ingress and DNS
-      delegate_to: localhost
-      become: false
-      shell: bash {{ playbook_dir }}/scripts/cloudflare-create-tunnel.sh
-      when: lookup("env", "CF_TUNNEL_TOKEN") != ""
-      changed_when: false
-      tags: tunnel
-
-    - name: Remove tunnel ingress and DNS
-      delegate_to: localhost
-      become: false
-      shell: bash {{ playbook_dir }}/scripts/cloudflare-remove-tunnel.sh
-      when: lookup("env", "CF_TUNNEL_TOKEN") != ""
-      tags: [never, tunnel-remove]
-
-    - name: Stop and disable cloudflared
-      systemd:
-        name: cloudflared
-        enabled: false
-        state: stopped
-      failed_when: false
-      tags: [never, tunnel-remove]
-
-    - name: Uninstall cloudflared service
-      shell: cloudflared service uninstall
-      failed_when: false
-      tags: [never, tunnel-remove]
-
-    # === GATHER INFO ===
-    - name: Get Docker version
-      command: docker --version
-      register: docker_ver
-      changed_when: false
-      tags: status
-
-    - name: Get Claude CLI version
-      command: /home/{{ ansible_user }}/.local/bin/claude --version
-      register: claude_ver
-      changed_when: false
-      failed_when: false
-      tags: status
-
-    - name: Get Nginx version
-      command: nginx -v
-      register: nginx_ver
-      changed_when: false
-      tags: status
-
-    - name: Get stress-ng version
-      command: stress-ng --version
-      register: stress_ver
-      changed_when: false
-      tags: status
-
-    - name: Get service statuses
-      command: systemctl is-active {{ item }}
-      loop: [docker, nginx]
-      register: services
-      changed_when: false
-      failed_when: false
-      tags: status
-
-    - name: Get rpi-connect status (user service)
-      command: systemctl --machine={{ ansible_user }}@.host --user is-active rpi-connect
-      register: rpi_connect
-      changed_when: false
-      failed_when: false
-      tags: status
-
-    - name: Get CPU temperature
-      command: vcgencmd measure_temp
-      register: cpu_temp
-      changed_when: false
-      tags: status
-
-    - name: Get uptime
-      command: uptime -p
-      register: uptime_info
-      changed_when: false
-      tags: status
-
-    - name: Check Claude Code auth status
-      shell: /home/{{ ansible_user }}/.local/bin/claude -p "hello" 2>&1
-      register: claude_auth
-      become: false
-      changed_when: false
-      failed_when: false
-      timeout: 30
-      environment:
-        HOME: /home/{{ ansible_user }}
-        USE_BUILTIN_RIPGREP: "0"
-      tags: status
-
-    - name: Get EEPROM version
+    - name: Check EEPROM update status
       command: rpi-eeprom-update
-      register: eeprom_ver
+      register: eeprom_check
       changed_when: false
       failed_when: false
-      tags: status
+      when: "'Raspberry Pi 5' in pi_model.stdout"
+      tags: eeprom
 
-    - name: Get fail2ban status
-      command: systemctl is-active fail2ban
-      register: fail2ban_status
-      changed_when: false
-      failed_when: false
-      tags: status
-
-    - name: Get fail2ban SSH jail stats
-      shell: fail2ban-client status sshd 2>/dev/null | grep -E 'Currently banned|Total banned' || echo 'not available'
-      register: fail2ban_stats
-      changed_when: false
-      failed_when: false
-      tags: status
-
-    - name: Get cloudflared status
-      command: systemctl is-active cloudflared
-      register: cloudflared_status
-      changed_when: false
-      failed_when: false
-      tags: status
-
-    - name: Check DDNS cron job
-      shell: crontab -l 2>/dev/null | grep -c cloudflare-ddns || echo 0
-      register: ddns_cron
-      changed_when: false
-      failed_when: false
-      tags: status
-
-    - name: Show summary
-      debug:
-        msg: |
-          ========== SETUP COMPLETE ==========
-
-          VERSIONS:
-            Docker:    {{ docker_ver.stdout }}
-            Claude:    {{ claude_ver.stdout | default('not found') }} ({{ 'authenticated' if claude_auth.rc == 0 else 'NOT authenticated - run: claude /login' }})
-            Nginx:     {{ nginx_ver.stderr | regex_search('nginx/[0-9.]+') }}
-            stress-ng: {{ stress_ver.stdout_lines[0] }}
-
-          SERVICES:
-            docker:      {{ services.results[0].stdout }}
-            nginx:       {{ services.results[1].stdout }}
-            cloudflared: {{ cloudflared_status.stdout | default('not installed') }}
-            fail2ban:    {{ fail2ban_status.stdout | default('not installed') }}
-            rpi-connect: {{ rpi_connect.stdout | default('not running - run rpi-connect signin') }}
-
-          NETWORK:
-            IP: {{ ansible_facts['default_ipv4']['address'] }} ({{ ansible_facts['default_ipv4']['interface'] }})
-            All IPs: {{ ansible_facts['all_ipv4_addresses'] | join(', ') }}
-            DDNS: cron {{ 'active' if ddns_cron.stdout | int > 0 else 'not configured' }}
-
-          SECURITY:
-            fail2ban: {{ fail2ban_stats.stdout_lines | default(['not available']) | join(', ') }}
-            SSH password auth: disabled
-
-          SYSTEM:
-            Hostname: {{ ansible_facts['hostname'] }}
-            Uptime: {{ uptime_info.stdout }}
-            CPU temp: {{ cpu_temp.stdout | regex_replace('temp=', '') }}
-            EEPROM:  {{ eeprom_ver.stdout | regex_search('CURRENT:.*') }}
-
-          STRESS TESTING:
-            CPU stress (test fan):    stress-ng --cpu 4 --timeout 60s
-            CPU benchmark:            sysbench cpu run
-            Memory benchmark:         sysbench memory run
-            Disk I/O benchmark:       sysbench fileio --file-test-mode=rndrw prepare && sysbench fileio --file-test-mode=rndrw run
-            Network server:           iperf3 -s
-            Network client:           iperf3 -c <server-ip>
-
-          NEXT STEPS (rpi-connect):
-            1. SSH in:   ssh -i ~/.ssh/mypi pi@mypi.local
-            2. Sign out: rpi-connect signout  (clears stale session if any)
-            3. Sign in:  rpi-connect signin
-            4. Open the URL shown in your browser to link the device
-            5. Verify:   rpi-connect status
-            6. Visit:    https://connect.raspberrypi.com/devices
-      tags: status
+    - name: Apply EEPROM update if available
+      command: rpi-eeprom-update -a
+      when:
+        - "'Raspberry Pi 5' in pi_model.stdout"
+        - "'UPDATE AVAILABLE' in eeprom_check.stdout | default('')"
+      notify: Reboot required
+      tags: eeprom
 
   handlers:
     - name: Reboot required
       debug:
-        msg: "Reboot required to apply changes (EEPROM firmware or fan config)"
+        msg: "Reboot required to apply changes (fan config or EEPROM firmware)"
+
+    - name: Restart SSH
+      systemd:
+        name: ssh
+        state: restarted
+
+    - name: Restart fail2ban
+      systemd:
+        name: fail2ban
+        state: restarted

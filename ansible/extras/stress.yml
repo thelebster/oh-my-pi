@@ -1,0 +1,22 @@
+---
+# Install stress testing and benchmark tools.
+#
+# Usage:
+#   ./play extra stress --limit mypi
+#
+# CPU stress (test fan):    stress-ng --cpu 4 --timeout 60s
+# CPU benchmark:            sysbench cpu run
+# Memory benchmark:         sysbench memory run
+# Disk I/O benchmark:       sysbench fileio --file-test-mode=rndrw prepare && sysbench fileio --file-test-mode=rndrw run
+# Network server:           iperf3 -s
+# Network client:           iperf3 -c <server-ip>
+#
+- name: Install stress tools
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Install stress tools
+      apt:
+        name: [stress-ng, sysbench, iperf3]
+        state: present

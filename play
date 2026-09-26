@@ -16,27 +16,40 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 if [ -f .env ]; then
-  set -a
+  # .env may reference unset variables; do not let -u abort on them.
+  set -a +u
   source .env
-  set +a
+  set +a -u
 fi
 
 EXTRAS_DIR="ansible/extras"
+
+# Extras are playbooks (have a hosts: line); included task files are not.
+is_playbook() {
+  grep -qE '^[[:space:]-]*hosts:' "$1"
+}
 
 if [ "${1:-}" = "extra" ]; then
   shift
   if [ $# -eq 0 ]; then
     echo "Available extras:"
     for f in "$EXTRAS_DIR"/*.yml; do
-      [ -f "$f" ] && echo "  $(basename "$f" .yml)"
+      if [ -f "$f" ] && is_playbook "$f"; then
+        echo "  $(basename "$f" .yml)"
+      fi
     done
     exit 0
   fi
+  if [[ ! "$1" =~ ^[A-Za-z0-9_-]+$ ]]; then
+    echo "Error: invalid extra name '$1'" >&2
+    echo "Run './play extra' to see available extras." >&2
+    exit 1
+  fi
   PLAYBOOK="$EXTRAS_DIR/$1.yml"
   shift
-  if [ ! -f "$PLAYBOOK" ]; then
-    echo "Error: $PLAYBOOK not found"
-    echo "Run './play extra' to see available extras."
+  if [ ! -f "$PLAYBOOK" ] || ! is_playbook "$PLAYBOOK"; then
+    echo "Error: $PLAYBOOK not found or not a playbook" >&2
+    echo "Run './play extra' to see available extras." >&2
     exit 1
   fi
   ansible-playbook "$PLAYBOOK" "$@"

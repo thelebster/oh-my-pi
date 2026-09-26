@@ -1,0 +1,35 @@
+---
+# Included by tunnel-config.yml — applies a single tunnel config file.
+
+- name: "Load config: {{ config_file.path | basename }}"
+  set_fact:
+    tunnel_config: "{{ lookup('file', config_file.path) | from_yaml }}"
+
+- name: "Validate config: {{ config_file.path | basename }}"
+  fail:
+    msg: "{{ config_file.path | basename }}: {{ item.msg }}"
+  when: item.when
+  loop:
+    - msg: "missing 'token_var'"
+      when: "{{ tunnel_config.token_var is not defined }}"
+    - msg: "missing 'zone_var'"
+      when: "{{ tunnel_config.zone_var is not defined }}"
+    - msg: "missing 'ingress'"
+      when: "{{ tunnel_config.ingress is not defined }}"
+    - msg: "{{ tunnel_config.token_var }} not set in .env"
+      when: "{{ lookup('env', tunnel_config.token_var) == '' }}"
+    - msg: "{{ tunnel_config.zone_var }} not set in .env"
+      when: "{{ lookup('env', tunnel_config.zone_var) == '' }}"
+  loop_control:
+    label: "{{ item.msg }}"
+
+- name: "Apply: {{ config_file.path | basename }}"
+  delegate_to: localhost
+  vars:
+    ansible_become: false
+  shell: bash {{ playbook_dir }}/../scripts/cloudflare-apply-tunnel-config.sh
+  environment:
+    CF_TUNNEL_TOKEN: "{{ lookup('env', tunnel_config.token_var) }}"
+    CF_ZONE_ID: "{{ lookup('env', tunnel_config.zone_var) }}"
+    CF_TUNNEL_INGRESS: "{{ tunnel_config.ingress | to_json }}"
+  changed_when: false

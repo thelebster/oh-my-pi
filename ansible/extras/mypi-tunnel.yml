@@ -1,0 +1,104 @@
+---
+# Cloudflare Tunnel for mypi via cloudflared (no port forwarding needed).
+# Requires CF_TUNNEL_TOKEN, CF_API_TOKEN, CF_ZONE_ID, CF_TUNNEL_HTTP_HOST, CF_TUNNEL_SSH_HOST in .env.
+#
+# Usage:
+#   ./play extra mypi-tunnel                      # install & configure
+#   ./play extra mypi-tunnel --tags tunnel-remove # remove ingress, DNS and cloudflared
+#
+- name: Setup Cloudflare Tunnel on mypi
+  hosts: mypi
+  become: true
+
+  tasks:
+    # === INSTALL ===
+    - name: Add cloudflared apt key
+      get_url:
+        url: https://pkg.cloudflare.com/cloudflare-main.gpg
+        dest: /usr/share/keyrings/cloudflare-main.gpg
+        mode: "0644"
+      when: lookup("env", "CF_TUNNEL_TOKEN") != ""
+      tags: install
+
+    - name: Add cloudflared apt repo
+      copy:
+        content: "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared bookworm main\n"
+        dest: /etc/apt/sources.list.d/cloudflared.list
+        mode: "0644"
+      register: cloudflared_repo
+      when: lookup("env", "CF_TUNNEL_TOKEN") != ""
+      tags: install
+
+    - name: Update apt cache for cloudflared
+      apt:
+        update_cache: true
+      when: cloudflared_repo.changed | default(false)
+      tags: install
+
+    - name: Install cloudflared
+      apt:
+        name: cloudflared
+        state: present
+      when: lookup("env", "CF_TUNNEL_TOKEN") != ""
+      tags: install
+
+    # === SERVICE ===
+    - name: Install cloudflared tunnel service
+      shell: cloudflared service install {{ lookup("env", "CF_TUNNEL_TOKEN") }}
+      args:
+        creates: /etc/systemd/system/cloudflared.service
+      when: lookup("env", "CF_TUNNEL_TOKEN") != ""
+      tags: service
+
+    - name: Enable and start cloudflared
+      systemd:
+        name: cloudflared
+        enabled: true
+        state: started
+      when: lookup("env", "CF_TUNNEL_TOKEN") != ""
+      tags: service
+
+    # === INGRESS + DNS ===
+    - name: Configure tunnel ingress and DNS
+      delegate_to: localhost
+      vars:
+        ansible_become: false
+      shell: bash {{ playbook_dir }}/../scripts/cloudflare-create-tunnel.sh
+      when: lookup("env", "CF_TUNNEL_TOKEN") != ""
+      changed_when: false
+      tags: ingress
+
+    # === STATUS ===
+    - name: Get cloudflared status
+      command: systemctl is-active cloudflared
+      register: cloudflared_status
+      changed_when: false
+      failed_when: false
+      tags: status
+
+    - name: Show tunnel status
+      debug:
+        msg: "cloudflared: {{ cloudflared_status.stdout }}"
+      tags: status
+
+    # === REMOVE ===
+    - name: Remove tunnel ingress and DNS
+      delegate_to: localhost
+      vars:
+        ansible_become: false
+      shell: bash {{ playbook_dir }}/../scripts/cloudflare-remove-tunnel.sh
+      when: lookup("env", "CF_TUNNEL_TOKEN") != ""
+      tags: [never, tunnel-remove]
+
+    - name: Stop and disable cloudflared
+      systemd:
+        name: cloudflared
+        enabled: false
+        state: stopped
+      failed_when: false
+      tags: [never, tunnel-remove]
+
+    - name: Uninstall cloudflared service
+      shell: cloudflared service uninstall
+      failed_when: false
+      tags: [never, tunnel-remove]

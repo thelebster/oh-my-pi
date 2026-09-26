@@ -5,16 +5,19 @@ all:
   hosts:
     mypi:
       ansible_host: "{{ lookup('env', 'PI_HOST') | default('mypi.local', true) }}"
+      ansible_port: "{{ lookup('env', 'PI_SSH_PORT') | default(22, true) }}"
       ansible_user: "{{ lookup('env', 'PI_USER') | default('pi', true) }}"
       ansible_ssh_private_key_file: "{{ lookup('env', 'SSH_KEY') | default('~/.ssh/mypi', true) }}"
       pi_hostname: "{{ lookup('env', 'PI_HOSTNAME') | default('mypi', true) }}"
     zeropi:
       ansible_host: "{{ lookup('env', 'ZERO_PI_HOST') | default('zeropi.local', true) }}"
+      ansible_port: "{{ lookup('env', 'ZERO_PI_SSH_PORT') | default(22, true) }}"
       ansible_user: "{{ lookup('env', 'ZERO_PI_USER') | default('pi', true) }}"
       ansible_ssh_private_key_file: "{{ lookup('env', 'ZERO_PI_SSH_KEY') | default('~/.ssh/zeropi', true) }}"
       pi_hostname: "{{ lookup('env', 'ZERO_PI_HOSTNAME') | default('zeropi', true) }}"
     pinas:
       ansible_host: "{{ lookup('env', 'PINAS_HOST') | default('pinas.local', true) }}"
+      ansible_port: "{{ lookup('env', 'PINAS_SSH_PORT') | default(22, true) }}"
       ansible_user: "{{ lookup('env', 'PINAS_USER') | default('pi', true) }}"
       ansible_ssh_private_key_file: "{{ lookup('env', 'PINAS_SSH_KEY') | default('~/.ssh/pinas', true) }}"
       pi_hostname: "{{ lookup('env', 'PINAS_HOSTNAME') | default('pinas', true) }}"

@@ -1,0 +1,56 @@
+---
+# Clean, read-only status summary. One probe, one block of output.
+# Everything not present shows as "not installed".
+#
+# Usage:
+#   ./play extra status --limit mypi
+#
+- name: Status summary
+  hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Gather status
+      shell: |
+        set +e
+        ver() { local b="$1"; shift; command -v "$b" >/dev/null 2>&1 && { "$@" 2>&1 | head -1; } || echo "not installed"; }
+        svc() { [ "$(systemctl show -p LoadState --value "$1")" = loaded ] && systemctl is-active "$1" || echo "not installed"; }
+        HOME_BIN="/home/{{ ansible_user }}/.local/bin"
+        printf '%-11s %s\n' "docker:"    "$(ver docker docker --version)"
+        printf '%-11s %s\n' "nginx:"     "$(ver nginx nginx -v)"
+        printf '%-11s %s\n' "claude:"    "$(ver "$HOME_BIN/claude" "$HOME_BIN/claude" --version)"
+        printf '%-11s %s\n' "stress-ng:" "$(ver stress-ng stress-ng --version)"
+        printf '%-11s %s\n' "tailscale:" "$(ver tailscale tailscale version)"
+        echo "---"
+        for s in docker nginx fail2ban cloudflared tailscaled; do printf '%-13s %s\n' "$s:" "$(svc $s)"; done
+        echo "---"
+        ip=$(hostname -I | awk '{print $1}')
+        echo "ip:        ${ip:-n/a}"
+        echo "all ips:   $(hostname -I | sed 's/ *$//')"
+        echo "ddns:      $(crontab -l 2>/dev/null | grep -qc cloudflare-ddns && echo active || echo 'not configured')"
+        echo "fail2ban:  $(fail2ban-client status sshd 2>/dev/null | grep -E 'Currently banned|Total banned' | sed 's/^[| `-]*//' | paste -sd' / ' - || echo 'n/a')"
+        echo "---"
+        echo "hostname:  $(hostname)"
+        echo "uptime:    $(uptime -p)"
+        echo "cpu temp:  $(vcgencmd measure_temp 2>/dev/null | sed 's/temp=//' || echo n/a)"
+        echo "throttled: $(vcgencmd get_throttled 2>/dev/null | sed 's/throttled=//' || echo n/a)"
+        echo "eeprom:    $(rpi-eeprom-update 2>/dev/null | grep -oE 'CURRENT:.*' || echo n/a)"
+      register: st
+      changed_when: false
+      failed_when: false
+
+    - name: Status
+      vars:
+        parts: "{{ st.stdout.split('---\n') }}"
+      debug:
+        msg: |-
+          ========== {{ inventory_hostname }} ==========
+          VERSIONS
+          {{ parts[0] | trim | indent(2, first=true) }}
+          SERVICES
+          {{ parts[1] | trim | indent(2, first=true) }}
+          NETWORK / SECURITY
+          {{ parts[2] | trim | indent(2, first=true) }}
+          SYSTEM
+          {{ parts[3] | trim | indent(2, first=true) }}

@@ -1,0 +1,318 @@
+---
+# Tailscale exit node. Full guide: TAILSCALE.md
+#
+# Installs Tailscale from the official repo, enables IP forwarding, opens UFW for the
+# tailnet, joins with an auth key and advertises this Pi as an exit node.
+#
+# .env:
+#   TAILSCALE_AUTH_KEY=tskey-auth-...   # https://login.tailscale.com/admin/settings/keys
+#                                       # (reusable + pre-authorized recommended; "ephemeral" off)
+#   TAILSCALE_SSH=true                  # optional: also enable Tailscale SSH (sshd-independent fallback)
+#   TAILSCALE_SSHD_PORT=2222            # optional: sshd tailnet port while Tailscale SSH owns 22 (default 2222)
+#
+# With TAILSCALE_SSH=true, Tailscale SSH owns port 22 on the tailnet IP, so sshd also
+# listens on TAILSCALE_SSHD_PORT: key-based SSH over the tailnet on that port, Tailscale
+# SSH on 22 as the backup. Port 22 stays on sshd for the LAN. After the first run, test
+# `ssh -p 2222 pi@<tailnet name>` before pointing Ansible at it (PI_SSH_PORT in .env; ZERO_PI_SSH_PORT / PINAS_SSH_PORT for the others).
+#
+# Usage:
+#   ./play extra tailscale --limit mypi
+#   ./play extra tailscale --limit mypi --tags status
+#   ./play extra tailscale --limit mypi --tags tailscale-remove
+#
+# After the first join, approve the exit node in the admin console
+# (Machines → the Pi → Edit route settings → Use as exit node), unless the
+# tailnet has an autoApprovers policy for exit nodes.
+#
+- name: Tailscale exit node
+  hosts: all
+  become: true
+
+  vars:
+    ts_auth_key: "{{ lookup('env', 'TAILSCALE_AUTH_KEY') }}"
+    ts_ssh: "{{ lookup('env', 'TAILSCALE_SSH') | default('false', true) | bool }}"
+    ts_sshd_port: "{{ lookup('env', 'TAILSCALE_SSHD_PORT') | default('2222', true) }}"
+    ts_sshd_conf: /etc/ssh/sshd_config.d/60-tailnet-port.conf
+    ts_release: "{{ ansible_distribution_release }}"
+
+  tasks:
+    # === INSTALL ===
+    - name: Add Tailscale apt key
+      get_url:
+        url: "https://pkgs.tailscale.com/stable/debian/{{ ts_release }}.noarmor.gpg"
+        dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
+        mode: "0644"
+      tags: install
+
+    - name: Add Tailscale apt repo
+      copy:
+        content: "deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/debian {{ ts_release }} main\n"
+        dest: /etc/apt/sources.list.d/tailscale.list
+        mode: "0644"
+      register: ts_repo
+      tags: install
+
+    - name: Install Tailscale
+      apt:
+        name: tailscale
+        state: present
+        update_cache: "{{ ts_repo.changed }}"
+      tags: install
+
+    - name: Enable and start tailscaled
+      systemd:
+        name: tailscaled
+        enabled: true
+        state: started
+      tags: install
+
+    # === EXIT NODE PREREQS ===
+    - name: Enable IP forwarding
+      sysctl:
+        name: "{{ item }}"
+        value: "1"
+        sysctl_file: /etc/sysctl.d/99-tailscale.conf
+        reload: true
+      loop:
+        - net.ipv4.ip_forward
+        - net.ipv6.conf.all.forwarding
+      tags: config
+
+    - name: Check whether UFW is active
+      command: ufw status
+      register: ufw_status
+      changed_when: false
+      failed_when: false
+      tags: config
+
+    - name: Allow Tailscale UDP port for direct connections
+      ufw:
+        rule: allow
+        port: "41641"
+        proto: udp
+      when: "'Status: active' in ufw_status.stdout"
+      tags: config
+
+    - name: Allow incoming traffic on the tailnet interface
+      ufw:
+        rule: allow
+        interface: tailscale0
+        direction: in
+      when: "'Status: active' in ufw_status.stdout"
+      tags: config
+
+    - name: Allow forwarding from the tailnet (exit node traffic)
+      ufw:
+        rule: allow
+        route: true
+        interface_in: tailscale0
+      when: "'Status: active' in ufw_status.stdout"
+      tags: config
+
+    # === SSHD TAILNET PORT ===
+    # Additive only: port 22 is kept, the config is validated before reload, and the
+    # drop-in is removed again if validation fails. Reload keeps existing sessions.
+    - name: Add sshd tailnet port
+      when: ts_ssh
+      tags: config
+      block:
+        - name: Get ssh.socket state
+          command: systemctl is-active ssh.socket
+          register: ssh_socket
+          changed_when: false
+          failed_when: false
+          check_mode: false
+
+        - name: Check sshd_config includes sshd_config.d
+          command: grep -qE '^\s*Include\s+/etc/ssh/sshd_config\.d/' /etc/ssh/sshd_config
+          register: sshd_include
+          changed_when: false
+          failed_when: false
+          check_mode: false
+
+        - name: Get explicit Port lines outside the drop-in
+          shell: >
+            grep -hsE '^\s*Port\s' /etc/ssh/sshd_config
+            $(ls /etc/ssh/sshd_config.d/*.conf 2>/dev/null | grep -vx '{{ ts_sshd_conf }}')
+          register: sshd_port_lines
+          changed_when: false
+          failed_when: false
+          check_mode: false
+
+        - name: Assert sshd can take a drop-in port
+          assert:
+            that:
+              - ssh_socket.stdout != "active"
+              - sshd_include.rc == 0
+            fail_msg: >-
+              sshd uses socket activation or does not include sshd_config.d; not touching it.
+
+        - name: Write sshd tailnet port drop-in
+          copy:
+            # No explicit Port elsewhere means sshd defaults to 22, which any Port line
+            # here would replace, so keep 22 explicitly.
+            content: |
+              # Managed by Ansible (extras/tailscale.yml): Tailscale SSH owns port 22 on
+              # the tailnet IP, key-based sshd is reachable over the tailnet on this port.
+              {% if sshd_port_lines.stdout | trim == '' %}
+              Port 22
+              {% endif %}
+              Port {{ ts_sshd_port }}
+            dest: "{{ ts_sshd_conf }}"
+            mode: "0644"
+          register: sshd_port_conf
+
+        - name: Validate sshd config and listen ports
+          shell: /usr/sbin/sshd -t && /usr/sbin/sshd -T | awk '$1 == "port" {print $2}'
+          register: sshd_ports
+          changed_when: false
+          failed_when: >-
+            sshd_ports.rc != 0
+            or '22' not in sshd_ports.stdout_lines
+            or (ts_sshd_port | string) not in sshd_ports.stdout_lines
+          when: not ansible_check_mode
+
+      rescue:
+        - name: Remove sshd tailnet port drop-in after failed validation
+          file:
+            path: "{{ ts_sshd_conf }}"
+            state: absent
+
+        - name: Stop on sshd config failure
+          fail:
+            msg: >-
+              sshd port setup failed, drop-in removed, sshd not reloaded:
+              {{ ansible_failed_result.msg | default(ansible_failed_result.stderr | default('')) }}
+
+    - name: Reload sshd
+      systemd:
+        name: ssh
+        state: reloaded
+      when: ts_ssh and sshd_port_conf is changed
+      tags: config
+
+    - name: Wait for sshd on the tailnet port
+      wait_for:
+        host: 127.0.0.1
+        port: "{{ ts_sshd_port | int }}"
+        timeout: 15
+      when: ts_ssh and not ansible_check_mode
+      tags: config
+
+    # === JOIN + ADVERTISE ===
+    - name: Get Tailscale backend state
+      shell: tailscale status --json 2>/dev/null | jq -r '.BackendState // "NoState"'
+      register: ts_state
+      changed_when: false
+      failed_when: false
+      tags: [config, status]
+
+    - name: Join tailnet and advertise exit node
+      command: >
+        tailscale up
+        --auth-key={{ ts_auth_key }}
+        --advertise-exit-node
+        --ssh={{ ts_ssh | lower }}
+        --hostname={{ pi_hostname | default(ansible_hostname) }}
+      no_log: true
+      when:
+        - ts_state.stdout != "Running"
+        - ts_auth_key != ""
+      tags: config
+
+    - name: Ensure exit node and SSH settings on an already-joined node
+      command: tailscale set --advertise-exit-node --ssh={{ ts_ssh | lower }}
+      when: ts_state.stdout == "Running"
+      changed_when: false
+      tags: config
+
+    - name: Join hint when no auth key
+      debug:
+        msg: >-
+          Not joined and TAILSCALE_AUTH_KEY is not set. Either add a key to .env and rerun,
+          or join interactively: ssh -t {{ ansible_host }} sudo tailscale up --advertise-exit-node
+      when:
+        - ts_state.stdout != "Running"
+        - ts_auth_key == ""
+      tags: config
+
+    # === STATUS ===
+    - name: Get Tailscale status
+      shell: |
+        prefs=$(tailscale debug prefs 2>/dev/null)
+        st=$(tailscale status --json 2>/dev/null)
+        echo "state:      $(echo "$st" | jq -r '.BackendState // "unknown"')"
+        echo "ip:         $(tailscale ip -4 2>/dev/null || echo n/a)"
+        echo "dns name:   $(echo "$st" | jq -r '.Self.DNSName // "n/a" | rtrimstr(".")')"
+        adv=$(echo "$prefs" | jq -r '(.AdvertiseRoutes // []) | index("0.0.0.0/0") != null')
+        appr=$(echo "$st" | jq -r '.Self.ExitNodeOption // false')
+        if [ "$adv" = true ] && [ "$appr" = true ]; then echo "exit node:  advertised + approved"
+        elif [ "$adv" = true ]; then echo "exit node:  advertised, AWAITING APPROVAL in admin console (Machines → Edit route settings)"
+        else echo "exit node:  not advertised"; fi
+        echo "ssh:        $(echo "$prefs" | jq -r 'if .RunSSH then "enabled" else "disabled" end')"
+        echo "sshd ports: $(/usr/sbin/sshd -T 2>/dev/null | awk '$1 == "port" {print $2}' | paste -sd, -)"
+        echo "forwarding: ipv4=$(sysctl -n net.ipv4.ip_forward) ipv6=$(sysctl -n net.ipv6.conf.all.forwarding)"
+        echo "health:     $(echo "$st" | jq -r '(.Health // []) | if length == 0 then "ok" else join(" | ") end')"
+      register: ts_status
+      changed_when: false
+      failed_when: false
+      tags: status
+
+    - name: Tailscale status
+      debug:
+        msg: "{{ ts_status.stdout_lines }}"
+      tags: status
+
+    # === REMOVE ===
+    - name: Leave tailnet
+      command: tailscale logout
+      failed_when: false
+      tags: [never, tailscale-remove]
+
+    - name: Uninstall Tailscale
+      apt:
+        name: tailscale
+        state: absent
+        purge: true
+      tags: [never, tailscale-remove]
+
+    - name: Remove Tailscale repo, key and sysctl
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/apt/sources.list.d/tailscale.list
+        - /usr/share/keyrings/tailscale-archive-keyring.gpg
+        - /etc/sysctl.d/99-tailscale.conf
+      tags: [never, tailscale-remove]
+
+    - name: Remove UFW rules
+      ufw:
+        rule: allow
+        delete: true
+        port: "{{ item.port | default(omit) }}"
+        proto: "{{ item.proto | default(omit) }}"
+        interface: "{{ item.iface | default(omit) }}"
+        direction: "{{ item.dir | default(omit) }}"
+        route: "{{ item.route | default(omit) }}"
+        interface_in: "{{ item.iface_in | default(omit) }}"
+      loop:
+        - { port: "41641", proto: udp }
+        - { iface: tailscale0, dir: in }
+        - { route: true, iface_in: tailscale0 }
+      failed_when: false
+      tags: [never, tailscale-remove]
+
+    - name: Remove sshd tailnet port drop-in
+      file:
+        path: "{{ ts_sshd_conf }}"
+        state: absent
+      register: sshd_port_removed
+      tags: [never, tailscale-remove]
+
+    - name: Reload sshd without the tailnet port
+      systemd:
+        name: ssh
+        state: reloaded
+      when: sshd_port_removed is changed
+      tags: [never, tailscale-remove]

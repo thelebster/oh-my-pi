@@ -1,0 +1,59 @@
+---
+# Generate en_US.UTF-8, make it the system default, and force it for SSH sessions.
+#
+# macOS Terminal sends LC_CTYPE=UTF-8 to every host, which Linux rejects
+# ("setlocale: LC_CTYPE: cannot change locale (UTF-8)"). A client-side
+# `SetEnv` in ~/.ssh/config only fixes hosts with a matching block and is
+# applied inconsistently across session types, so we force a valid locale
+# server-side via sshd instead — works for every client and every login.
+#
+# Usage:
+#   ./play extra locale --limit mypi
+#
+- name: Fix locale
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Enable en_US.UTF-8 in locale.gen
+      lineinfile:
+        path: /etc/locale.gen
+        regexp: '^#? *en_US.UTF-8 UTF-8'
+        line: 'en_US.UTF-8 UTF-8'
+      register: locale_gen
+
+    - name: Check whether en_US.UTF-8 exists
+      shell: locale -a | grep -qi '^en_US.utf-\?8$'
+      register: locale_present
+      changed_when: false
+      failed_when: false
+
+    - name: Generate locales
+      command: locale-gen
+      when: locale_gen.changed or locale_present.rc != 0
+
+    - name: Read current default locale
+      command: localectl status
+      register: localectl_status
+      changed_when: false
+
+    - name: Set default locale to en_US.UTF-8
+      command: localectl set-locale LANG=en_US.UTF-8
+      when: "'LANG=en_US.UTF-8' not in localectl_status.stdout"
+
+    # macOS Terminal sends LC_CTYPE=UTF-8, which interactive bash (readline) rejects
+    # even when LANG/LC_ALL are valid. sshd SetEnv overrides the client value, so we
+    # pin LC_CTYPE (and LANG/LC_ALL) to a real locale for every SSH session.
+    - name: Force a valid locale for all SSH sessions
+      copy:
+        content: "SetEnv LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 LC_CTYPE=en_US.UTF-8\n"
+        dest: /etc/ssh/sshd_config.d/99-locale.conf
+        mode: "0644"
+        validate: sshd -t -f %s
+      notify: Restart SSH
+
+  handlers:
+    - name: Restart SSH
+      systemd:
+        name: ssh
+        state: restarted

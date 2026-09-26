@@ -1,0 +1,25 @@
+# Per-host Cloudflare Tunnel ingress config.
+#
+# Place in: ansible/files/cloudflared/<hostname>/<name>.yml
+# Apply:    ./play extra tunnel-config --limit <hostname>
+# Remove:   ./play extra tunnel-config --limit <hostname> --tags tunnel-remove
+#
+# Hostnames are subdomains — the zone is resolved from the zone_var env var.
+# Full FQDNs (containing a dot) are used as-is.
+# Catch-all rule is auto-appended if missing.
+#
+# Docs: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/configure-tunnels/origin-configuration/
+
+token_var: ZERO_PI_CF_TUNNEL_TOKEN
+zone_var: CF_ZONE_ID
+
+ingress:
+  - hostname: myapp
+    service: http://localhost:80
+  - hostname: myapp
+    service: https://localhost:443
+    originRequest:
+      noTLSVerify: true
+  - hostname: ssh-myhost
+    service: ssh://localhost:22
+  - service: http_status:404
